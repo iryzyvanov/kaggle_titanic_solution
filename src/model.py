@@ -39,6 +39,9 @@ try:
 except ImportError:  # CatBoost может быть не установлен в окружении
     CatBoostClassifier = None
 
+import optuna
+
+from sklearn.model_selection import cross_val_score
 
 RANDOM_STATE = 42
 CV_FOLDS = 5
@@ -50,19 +53,57 @@ NEGATIVE_LABEL = 0
 def get_models(random_state: int = RANDOM_STATE) -> Dict[str, object]:
     """Возвращает модели в одном месте, чтобы их было удобно менять."""
     models: Dict[str, object] = {
-        "Logistic Regression": LogisticRegression(max_iter=1_000, random_state=random_state),
-        "RBF SVM": svm.SVC(kernel="rbf", C=1, gamma=0.1, probability=True, random_state=random_state),
-        "KNN": KNeighborsClassifier(),
-        "Gaussian Naive Bayes": GaussianNB(),
-        "Decision Tree": DecisionTreeClassifier(random_state=random_state),
-        "Random Forest": RandomForestClassifier(n_estimators=100, random_state=random_state),
+
+        "Logistic Regression": LogisticRegression(
+            max_iter=5_000,
+            random_state=random_state,
+            C=1.0,
+            penalty="l2",
+            solver="liblinear",
+            class_weight=None,
+        ),
+
+        "RBF SVM": svm.SVC(
+            kernel="rbf",
+            C=1.0,
+            gamma="scale",
+            probability=True,
+            random_state=random_state,
+        ),
+
+        "KNN": KNeighborsClassifier(
+            n_neighbors=7,
+            weights="distance",
+            p=2,
+        ),
+
+        "Gaussian Naive Bayes": GaussianNB(
+            var_smoothing=1e-9,
+        ),
+
+        "Decision Tree": DecisionTreeClassifier(
+            max_depth=4,
+            min_samples_split=5,
+            min_samples_leaf=3,
+            random_state=random_state,
+        ),
+
+        "Random Forest": RandomForestClassifier(
+            n_estimators=300,
+            max_depth=5,
+            min_samples_split=5,
+            min_samples_leaf=2,
+            max_features="sqrt",
+            random_state=random_state,
+        ),
     }
 
     if CatBoostClassifier is not None:
         models["CatBoost"] = CatBoostClassifier(
-            iterations=300,
-            learning_rate=0.05,
+            iterations=500,
+            learning_rate=0.03,
             depth=4,
+            l2_leaf_reg=3,
             loss_function="Logloss",
             eval_metric="Accuracy",
             random_seed=random_state,
@@ -71,6 +112,144 @@ def get_models(random_state: int = RANDOM_STATE) -> Dict[str, object]:
 
     return models
 
+def build_model_by_trial(trial, model_name, random_state=RANDOM_STATE):
+
+    if model_name == "Logistic Regression":
+
+        return LogisticRegression(
+            C=trial.suggest_float("C", 1e-3, 10, log=True),
+            penalty=trial.suggest_categorical("penalty", ["l1", "l2"]),
+            solver="liblinear",
+            class_weight=trial.suggest_categorical(
+                "class_weight",
+                [None, "balanced"]
+            ),
+            max_iter=5000,
+            random_state=random_state,
+        )
+
+    elif model_name == "Random Forest":
+
+        return RandomForestClassifier(
+            n_estimators=trial.suggest_int("n_estimators", 100, 700),
+            max_depth=trial.suggest_int("max_depth", 2, 10),
+            min_samples_split=trial.suggest_int("min_samples_split", 2, 20),
+            min_samples_leaf=trial.suggest_int("min_samples_leaf", 1, 10),
+            max_features=trial.suggest_categorical(
+                "max_features",
+                ["sqrt", "log2", None]
+            ),
+            random_state=random_state,
+        )
+
+    elif model_name == "RBF SVM":
+
+        return svm.SVC(
+            C=trial.suggest_float("C", 1e-3, 100, log=True),
+            gamma=trial.suggest_float("gamma", 1e-4, 1, log=True),
+            probability=True,
+            kernel="rbf",
+            random_state=random_state,
+        )
+
+    elif model_name == "KNN":
+
+        return KNeighborsClassifier(
+            n_neighbors=trial.suggest_int("n_neighbors", 3, 25),
+            weights=trial.suggest_categorical(
+                "weights",
+                ["uniform", "distance"]
+            ),
+            p=trial.suggest_int("p", 1, 2),
+        )
+
+    elif model_name == "Decision Tree":
+
+        return DecisionTreeClassifier(
+            max_depth=trial.suggest_int("max_depth", 2, 10),
+            min_samples_split=trial.suggest_int("min_samples_split", 2, 20),
+            min_samples_leaf=trial.suggest_int("min_samples_leaf", 1, 10),
+            random_state=random_state,
+        )
+
+    elif model_name == "Gaussian Naive Bayes":
+
+        return GaussianNB(
+            var_smoothing=trial.suggest_float(
+                "var_smoothing",
+                1e-12,
+                1e-6,
+                log=True
+            )
+        )
+
+    elif model_name == "CatBoost" and CatBoostClassifier is not None:
+
+        return CatBoostClassifier(
+            iterations=trial.suggest_int("iterations", 100, 1000),
+            learning_rate=trial.suggest_float(
+                "learning_rate",
+                1e-3,
+                0.3,
+                log=True
+            ),
+            depth=trial.suggest_int("depth", 3, 10),
+            l2_leaf_reg=trial.suggest_float(
+                "l2_leaf_reg",
+                1e-3,
+                10,
+                log=True
+            ),
+            verbose=False,
+            random_seed=random_state,
+        )
+
+    else:
+        raise ValueError(f"Unknown model: {model_name}")
+def optimize_model(
+    model_name,
+    X,
+    y,
+    n_trials=30,
+    cv_folds=5,
+    ):
+    
+    def objective(trial):
+
+        model = build_model_by_trial(
+            trial,
+            model_name=model_name,
+        )
+
+        scores = cross_val_score(
+            model,
+            X,
+            y,
+            cv=cv_folds,
+            scoring="accuracy",
+        )
+
+        return scores.mean()
+
+    study = optuna.create_study(
+        direction="maximize"
+    )
+
+    study.optimize(
+        objective,
+        n_trials=n_trials,
+    )
+
+    print(f"\nBEST PARAMS [{model_name}]")
+    print(study.best_params)
+    print(f"BEST SCORE: {study.best_value:.4f}")
+
+    best_model = build_model_by_trial(
+        study.best_trial,
+        model_name=model_name,
+    )
+
+    return best_model, study
 
 def _take_rows(data, indices):
     """Скроем разницу с синтаксисе с помощью адаптера"""
@@ -249,7 +428,15 @@ def run_experiments(
     threshold_details = {}
 
     for model_name, estimator in models.items():
-        print(f"Training: {model_name}")
+
+        print(f"\nOPTIMIZING: {model_name}")
+
+        estimator, study = optimize_model(
+            model_name=model_name,
+            X=train_X,
+            y=train_Y,
+            n_trials=20,
+        )
         result, fitted_model, threshold_scores, fold_scores = fit_evaluate_model(
             model_name=model_name,
             estimator=estimator,
