@@ -39,6 +39,8 @@ CV_FOLDS = 5
 POSITIVE_LABEL = 1
 NEGATIVE_LABEL = 0
 
+
+
 def _get_catboost_task_type() -> str:
     """Определяет, доступна ли видеокарта для обучения CatBoost."""
     if CatBoostClassifier is None:
@@ -53,7 +55,9 @@ def _get_catboost_task_type() -> str:
         pass
     return "CPU"
 
-TASK_TYPE = _get_catboost_task_type()
+#в Титанике небольшой датасет, поэтому переход на GPU замедляет моделирование в целом.
+TASK_TYPE = "CPU"
+#_get_catboost_task_type()
 
 def get_models(random_state: int = RANDOM_STATE) -> Dict[str, object]:
     """Возвращает базовые модели."""
@@ -77,6 +81,7 @@ def get_models(random_state: int = RANDOM_STATE) -> Dict[str, object]:
             random_seed=random_state,
             task_type=TASK_TYPE,
             verbose=False,
+            border_count = 64
         )
 
     return models
@@ -178,14 +183,10 @@ def optimize_model(
     random_state=RANDOM_STATE
 ):
     """
-    Одновременный подбор гиперпараметров и порога с помощью Optuna.
+    Подбор гиперпараметров с помощью Optuna (без порога).
     """
     def objective(trial):
-        # 1. Задаем гиперпараметры модели
         model = build_model_by_trial(trial, model_name=model_name, random_state=random_state)
-        
-        # 2. Задаем порог как гиперпараметр
-        threshold = trial.suggest_float("threshold", 0.0, 1.0, step=0.01)
         
         cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
         scores = []
@@ -197,13 +198,8 @@ def optimize_model(
             fold_model = clone(model)
             fold_model.fit(X_train_fold, y_train_fold)
             
-            # Получаем вероятности на валидации
-            valid_proba = _positive_class_proba(fold_model, X_valid_fold, POSITIVE_LABEL)
-            
-            # Применяем порог из Optuna
-            valid_pred = _predict_by_threshold(
-                valid_proba, threshold, POSITIVE_LABEL, NEGATIVE_LABEL
-            )
+            # Используем стандартный predict (порог 0.5 "под капотом")
+            valid_pred = fold_model.predict(X_valid_fold)
             
             # Считаем метрику
             score = metrics.accuracy_score(y_valid_fold, valid_pred)
@@ -228,15 +224,12 @@ def optimize_model(
 
     # Создаем лучшую модель на основе найденных параметров
     best_model = build_model_by_trial(study.best_trial, model_name=model_name, random_state=random_state)
-    best_threshold = study.best_trial.params["threshold"]
 
-    return best_model, best_threshold, study
-
+    return best_model, study
 
 def fit_evaluate_model(
     model_name: str,
     estimator,
-    best_threshold: float,
     cv_mean: float,
     cv_std: float,
     train_X,
@@ -249,12 +242,11 @@ def fit_evaluate_model(
     final_model = clone(estimator)
     final_model.fit(train_X, train_Y)
 
-    test_proba = _positive_class_proba(final_model, test_X, POSITIVE_LABEL)
-    test_pred = _predict_by_threshold(test_proba, best_threshold, POSITIVE_LABEL, NEGATIVE_LABEL)
+    # Стандартный predict
+    test_pred = final_model.predict(test_X)
 
     result = {
         "model": model_name,
-        "best_threshold": best_threshold,
         "cv_accuracy_mean": cv_mean,
         "cv_accuracy_std": cv_std,
         "test_accuracy": metrics.accuracy_score(test_Y, test_pred),
@@ -286,8 +278,7 @@ def run_experiments(
 
         print(f"\nOPTIMIZING: {model_name}")
 
-        # 1. Optuna подбирает всё за один проход
-        best_model, best_threshold, study = optimize_model(
+        best_model, study = optimize_model(
             model_name=model_name,
             X=train_X,
             y=train_Y,
@@ -298,11 +289,10 @@ def run_experiments(
         cv_mean = study.best_value
         cv_std = study.best_trial.user_attrs.get("cv_std", np.nan)
 
-        # 2. Обучение на полных данных и оценка на тесте
+        # Обучение на полных данных и оценка на тесте
         result, fitted_model = fit_evaluate_model(
             model_name=model_name,
             estimator=best_model,
-            best_threshold=best_threshold,
             cv_mean=cv_mean,
             cv_std=cv_std,
             train_X=train_X,
@@ -314,11 +304,16 @@ def run_experiments(
         results.append(result)
         trained_models[model_name] = fitted_model
 
+    # results_df = pd.DataFrame(results).sort_values(
+    #     by=["cv_accuracy_mean", "test_accuracy"],
+    #     ascending=False,
+    # )
+    # Сортируем сначала по среднему, затем по отклонению
+    # Mean - по убыванию (False), Std - по возрастанию (True)
     results_df = pd.DataFrame(results).sort_values(
-        by=["cv_accuracy_mean", "test_accuracy"],
-        ascending=False,
-    )
-
+            by=["cv_accuracy_mean", "cv_accuracy_std"], 
+            ascending=[False, True], 
+        )
     return results_df, trained_models
 
 
@@ -326,7 +321,6 @@ def print_results(results_df: pd.DataFrame) -> None:
     """Печатает итоговую таблицу в компактном виде."""
     columns = [
         "model",
-        "best_threshold",
         "cv_accuracy_mean",
         "cv_accuracy_std",
         "test_accuracy",
