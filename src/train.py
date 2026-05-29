@@ -18,11 +18,12 @@ from __future__ import annotations
 from typing import Tuple
 
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 
 
 from preprocessing import preprocessing_data
-from model         import run_experiments, print_results
+from model2         import run_experiments, print_results
 
 TARGET_COLUMN = "Survived"
 TEST_SIZE = 0.30
@@ -97,7 +98,38 @@ def prepare_features(
 
     return train_processed, test_processed, scaler
 
-
+def reduce_mem_usage(df):
+    """Перебирает все столбцы датафрейма и изменяет тип данных для экономии памяти."""
+    start_mem = df.memory_usage().sum() / 1024**2
+    print(f'Исходный размер памяти: {start_mem:.4f} MB')
+    
+    for col in df.columns:
+        col_type = df[col].dtype
+        
+        # Пропускаем текстовые/категориальные колонки
+        if col_type != object and col_type.name != 'category':
+            c_min = df[col].min()
+            c_max = df[col].max()
+            
+            # Обработка целочисленных типов
+            if str(col_type)[:3] == 'int':
+                if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
+                    df[col] = df[col].astype(np.int8)
+                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
+                    df[col] = df[col].astype(np.int16)
+                elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                    df[col] = df[col].astype(np.int32)
+            # Обработка типов с плавающей точкой (float)
+            else:
+                if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
+                    df[col] = df[col].astype(np.float16)
+                elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+                    df[col] = df[col].astype(np.float32)
+                    
+    end_mem = df.memory_usage().sum() / 1024**2
+    print(f'Размер памяти после оптимизации: {end_mem:.4f} MB')
+    
+    return df
 
 def main():
     test_data = pd.read_csv("data/test.csv")
@@ -111,8 +143,8 @@ def main():
         )
 
     train_processed, test_processed, scaler = prepare_features(train_X, test_X)
-
-
+    train_processed = reduce_mem_usage(train_processed)
+    test_processed  = reduce_mem_usage(test_processed)
     print("=" * 80)
     print("PREPROCESSING")
     print("=" * 80)
@@ -120,7 +152,7 @@ def main():
     print(f"Test processed shape:  {test_processed.shape}")
     print()
 
-    results_df, trained_models, threshold_details = run_experiments(
+    results_df, trained_models = run_experiments(
         train_X=train_processed,
         train_Y=train_Y,
         test_X=test_processed,
@@ -128,7 +160,6 @@ def main():
     )
 
     print_results(results_df)
-
     # return {
     #     "train_data": train_data,
     #     "train": train,
