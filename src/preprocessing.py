@@ -28,14 +28,6 @@ REPLACEMENT_HONORIFICS = {
 def normalize_honorifics(df):
     df['Honorific'] = df['Honorific'].replace(REPLACEMENT_HONORIFICS)
 
-AGE_BY_INITIAL_INT = {
-    'Mr'    : 33,
-    'Mrs'   : 36,
-    'Master': 5,
-    'Miss'  : 22,
-    'Other' : 46
-}
-
 AGE_BY_INITIAL_DOUBLE = {
     'Mr'    : 32.739609,
     'Mrs'   : 35.981818,
@@ -46,9 +38,10 @@ AGE_BY_INITIAL_DOUBLE = {
 NUMERIC_FEATURES = [
     'Age',
     'FamilySize',
-    'FareLog'
+    'FareLog',
+    'Pclass'
 ]
-FEATURES_TO_DROP = ['PassengerId','Name','Ticket','Fare','Cabin','Embarked']
+FEATURES_TO_DROP = ['PassengerId','Name','Ticket','SibSp','Parch','Fare','Cabin','Embarked']
 
 def extract_and_set_honorifics(df):
     df['Honorific'] = df.Name.str.extract(r'([A-Za-z]+)\.')
@@ -61,20 +54,13 @@ def extract_and_set_honorifics(df):
 def fill_age_by_honorifics(df):
 
     for honorific in AGE_BY_INITIAL_DOUBLE:
+        mask = (df.Age.isnull()
+            & (df.Honorific == honorific))
 
-        mask = (
-            df.Age.isnull()
-            & (df.Honorific == honorific)
-        )
-
-        df.loc[mask, 'Age'] = (
-            AGE_BY_INITIAL_DOUBLE[honorific]
-        )
+        df.loc[mask, 'Age'] = (AGE_BY_INITIAL_DOUBLE[honorific])
 
     # fallback
-    df['Age'] = df['Age'].fillna(
-        df['Age'].median()
-    )
+    df['Age'] = df['Age'].fillna(df['Age'].median())
 
     df.drop('Honorific', axis=1, inplace=True)
 
@@ -98,6 +84,7 @@ def drop_feauteres(df):
 
 def encode_categorical(df):
     df = pd.get_dummies(df, columns=['Sex'], drop_first=True)
+    df = pd.get_dummies(df, columns=['Deck'], prefix='Deck', drop_first=True)
     return df
 
 def fit_robust_scaler(df):
@@ -110,6 +97,10 @@ def transform_robust_scaler(df, scaler):
         df[NUMERIC_FEATURES]
     )
     return df
+
+def preprocess_Deck(df):
+    df['Deck'] = df['Cabin'].fillna('U').str[0]
+    df['Deck'] = df['Deck'].replace(['T', 'G', 'F', 'A'], 'Rare')
 
 def preprocessing_data(
     df,
@@ -133,6 +124,8 @@ def preprocessing_data(
 
     create_FareLog(df_copy)
 
+    preprocess_Deck(df_copy)
+
     drop_feauteres(df_copy)
 
     # ========= ENCODING =========
@@ -148,7 +141,7 @@ def preprocessing_data(
     df_copy = transform_robust_scaler(df_copy, scaler)
 
     # ========= ALIGN TEST COLUMNS =========
-
+    # Выравниваем тестовую выборку по обучающей
     if train_columns is not None:
 
         df = df.reindex(
