@@ -69,7 +69,7 @@ def get_ensemble_model(estimators):
         print("Сборка ансамбля: Стекинг (Мета-модель: Логистическая Регрессия)...")
         return StackingClassifier(
             estimators=estimators,
-            final_estimator=LogisticRegression(random_state=config.RANDOM_STATE),
+            final_estimator=LogisticRegression(random_state=config.general.RANDOM_STATE),
             cv=config.N_SPLITS,
             n_jobs=-1
         )
@@ -78,7 +78,7 @@ def get_ensemble_model(estimators):
         print("Сборка ансамбля: Стекинг (Мета-модель: Ridge Classifier)...")
         return StackingClassifier(
             estimators=estimators,
-            final_estimator=RidgeClassifier(random_state=config.RANDOM_STATE),
+            final_estimator=RidgeClassifier(random_state=config.general.RANDOM_STATE),
             cv=config.N_SPLITS,
             n_jobs=-1
         )
