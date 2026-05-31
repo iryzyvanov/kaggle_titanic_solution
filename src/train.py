@@ -10,7 +10,7 @@ from sklearn.linear_model import LogisticRegression, RidgeClassifier
 
 from config import config
 from preprocessing import preprocessing_data
-from model2         import run_experiments
+from model         import run_experiments
 from utils          import append_results_to_markdown_log, print_results, reduce_mem_usage
 
 def make_train_test_split(
