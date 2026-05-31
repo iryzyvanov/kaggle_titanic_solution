@@ -73,7 +73,7 @@ def create_FareLog(df):
     )
     df['FareLog'] = np.log1p(df['Fare'])
 
-def drop_feateres(df):
+def drop_features(df):
     df.drop(FEATURES_TO_DROP,axis=1,inplace=True)
 
 
@@ -100,6 +100,6 @@ def preprocessing_data(df):
 
     preprocess_Deck(df_copy)
 
-    drop_feateres(df_copy)
+    drop_features(df_copy)
 
     return df_copy

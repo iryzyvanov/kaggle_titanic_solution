@@ -46,10 +46,10 @@ def take_Optuna_with_modify_logs():
         handler.addFilter(OptunaLogFormatter())
     return optuna
 
-def reduce_mem_usage(df):
+def reduce_mem_usage(df, verbose = False):
     """Перебирает все столбцы датафрейма и изменяет тип данных для экономии памяти."""
     start_mem = df.memory_usage().sum() / 1024**2
-    print(f'Исходный размер памяти: {start_mem:.4f} MB')
+    
     
     for col in df.columns:
         col_type = df[col].dtype
@@ -75,7 +75,9 @@ def reduce_mem_usage(df):
                     df[col] = df[col].astype(np.float32)
                     
     end_mem = df.memory_usage().sum() / 1024**2
-    print(f'Размер памяти после оптимизации: {end_mem:.4f} MB')
+    if (verbose):
+        print(f'Исходный размер памяти: {start_mem:.4f} MB')
+        print(f'Размер памяти после оптимизации: {end_mem:.4f} MB')
     
     return df
 

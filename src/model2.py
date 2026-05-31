@@ -26,23 +26,16 @@ try:
 except ImportError:
     CatBoostClassifier = None
 
-
+from config import config
 from utils import take_Optuna_with_modify_logs
 optuna = take_Optuna_with_modify_logs()
 
-RANDOM_STATE = 42
-CV_FOLDS = 2
-POSITIVE_LABEL = 1
-NEGATIVE_LABEL = 0
-
-#в Титанике небольшой датасет, поэтому переход на GPU замедляет моделирование в целом.
-TASK_TYPE = "CPU"
-#_get_catboost_task_type()
 
 
-def get_models(random_state: int = RANDOM_STATE) -> Dict[str, object]:
+
+def get_models(random_state: int = config.general.seed) -> Dict[str, object]:
     """Возвращает базовые модели."""
-    models: Dict[str, object] = {
+    all_available_models: Dict[str, object] = {
         "Logistic Regression": LogisticRegression(
             max_iter=5_000, random_state=random_state, solver="liblinear"
         ),
@@ -56,18 +49,23 @@ def get_models(random_state: int = RANDOM_STATE) -> Dict[str, object]:
     }
 
     if CatBoostClassifier is not None:
-        models["CatBoost"] = CatBoostClassifier(
+        all_available_models["CatBoost"] = CatBoostClassifier(
             loss_function="Logloss",
             eval_metric="Accuracy",
             random_seed=random_state,
-            task_type=TASK_TYPE,
+            task_type=config.model.task_type,
             verbose=False,
             border_count = 64
         )
+    active_models = {}
+    for model_name in config.model.active_models:
+        if model_name in all_available_models:
+            active_models[model_name] = all_available_models[model_name]
+        else:
+            print(f"⚠️ Предупреждение: Модель '{model_name}' запрошена в конфиге, но не найдена или не поддерживается.")
+    return active_models
 
-    return models
-
-def build_model_by_trial(trial, model_name, random_state=RANDOM_STATE):
+def build_model_by_trial(trial, model_name, random_state=config.general.seed):
     """Строит классификатор на основе гиперпараметров из trial."""
     if model_name == "Logistic Regression":
         penalty_choice = trial.suggest_categorical("penalty", ["l1", "l2"])
@@ -150,7 +148,7 @@ def build_model_by_trial(trial, model_name, random_state=RANDOM_STATE):
             min_data_in_leaf=trial.suggest_int("min_data_in_leaf", 1, 10), 
             verbose=False,
             random_seed=random_state,
-            task_type=TASK_TYPE,
+            task_type=config.model.task_type,
         )
         
     else:
@@ -183,7 +181,7 @@ def get_preprocessor():
         remainder=RobustScaler() 
     )
 
-def optimize_model(model_name, X, y, n_trials, cv_folds=5, random_state=RANDOM_STATE):
+def optimize_model(model_name, X, y, n_trials, cv_folds=5, random_state=config.general.seed):
     def objective(trial):
         # 1. Задаем модель
         model = build_model_by_trial(trial, model_name=model_name, random_state=random_state)
@@ -266,22 +264,18 @@ def run_experiments(
     train_Y,
     test_X,
     test_Y,
-    models: Optional[Dict[str, object]] = None,
-    cv_folds: int = CV_FOLDS,
-    n_trials: int = 100,
+    cv_folds: int = config.model.cv_folds
     ) -> Tuple[pd.DataFrame, Dict[str, object]]:
     """Запускает обучение и сравнение всех моделей."""
-    if models is None:
-        models = get_models()
 
     results = []
     trained_models = {}
 
-    for model_name, estimator in models.items():
+    for model_name in config.model.active_models:
 
         print(f"\nOPTIMIZING: {model_name}")
-        # Динамически задаем количество попыток
-        n_trials = 300 if model_name in ["CatBoost", "Random Forest"] else 150
+        
+        n_trials = config.optuna.n_trials_complex if model_name in ["CatBoost", "Random Forest"] else config.optuna.n_trials_default
         best_model, study = optimize_model(
             model_name=model_name,
             X=train_X,
