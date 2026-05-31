@@ -41,7 +41,7 @@ NUMERIC_FEATURES = [
     'FareLog',
     'Pclass'
 ]
-FEATURES_TO_DROP = ['PassengerId','Name','Ticket','SibSp','Parch','Fare','Cabin','Embarked']
+FEATURES_TO_DROP = ['PassengerId','Name','Ticket','Cabin','Embarked']
 
 def extract_and_set_honorifics(df):
     df['Honorific'] = df.Name.str.extract(r'([A-Za-z]+)\.')
@@ -87,16 +87,16 @@ def encode_categorical(df):
     df = pd.get_dummies(df, columns=['Deck'], prefix='Deck', drop_first=True)
     return df
 
-def fit_robust_scaler(df):
-    scaler = RobustScaler()
-    scaler.fit(df[NUMERIC_FEATURES])
-    return scaler
+# def fit_robust_scaler(df):
+#     scaler = RobustScaler()
+#     scaler.fit(df[NUMERIC_FEATURES])
+#     return scaler
 
-def transform_robust_scaler(df, scaler):
-    df[NUMERIC_FEATURES] = scaler.transform(
-        df[NUMERIC_FEATURES]
-    )
-    return df
+# def transform_robust_scaler(df, scaler):
+#     df[NUMERIC_FEATURES] = scaler.transform(
+#         df[NUMERIC_FEATURES]
+#     )
+#     return df
 
 def preprocess_Deck(df):
     df['Deck'] = df['Cabin'].fillna('U').str[0]
@@ -134,11 +134,11 @@ def preprocessing_data(
 
     # ========= SCALING =========
 
-    if fit_robust_sc:
+    # if fit_robust_sc:
 
-        scaler = fit_robust_scaler(df_copy)
+    #     scaler = fit_robust_scaler(df_copy)
 
-    df_copy = transform_robust_scaler(df_copy, scaler)
+    # df_copy = transform_robust_scaler(df_copy, scaler)
 
     # ========= ALIGN TEST COLUMNS =========
     # Выравниваем тестовую выборку по обучающей
@@ -149,4 +149,4 @@ def preprocessing_data(
             fill_value=0
         )
 
-    return df_copy, scaler
+    return df_copy#, scaler

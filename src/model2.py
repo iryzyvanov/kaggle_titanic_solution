@@ -17,6 +17,9 @@ from typing import Callable, Dict, Iterable, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import RobustScaler
+
 from sklearn.model_selection import StratifiedKFold
 from sklearn import metrics, svm
 from sklearn.base import clone
@@ -35,7 +38,7 @@ except ImportError:
 import optuna
 
 RANDOM_STATE = 42
-CV_FOLDS = 5
+CV_FOLDS = 2
 POSITIVE_LABEL = 1
 NEGATIVE_LABEL = 0
 
@@ -92,57 +95,86 @@ def build_model_by_trial(trial, model_name, random_state=RANDOM_STATE):
         penalty_choice = trial.suggest_categorical("penalty", ["l1", "l2"])
         l1_ratio_value = 1.0 if penalty_choice == "l1" else 0.0
         return LogisticRegression(
-            C=trial.suggest_float("C", 1e-3, 10, log=True),
+            # Расширен диапазон силы регуляризации
+            C=trial.suggest_float("C", 1e-4, 100, log=True), 
             l1_ratio=l1_ratio_value,
             solver="liblinear",
             class_weight=trial.suggest_categorical("class_weight", [None, "balanced"]),
             max_iter=5000,
             random_state=random_state,
         )
+        
     elif model_name == "Random Forest":
         return RandomForestClassifier(
             n_estimators=trial.suggest_int("n_estimators", 100, 700),
+            # Добавлен выбор критерия разбиения
+            criterion=trial.suggest_categorical("criterion", ["gini", "entropy"]), 
             max_depth=trial.suggest_int("max_depth", 2, 10),
             min_samples_split=trial.suggest_int("min_samples_split", 2, 20),
             min_samples_leaf=trial.suggest_int("min_samples_leaf", 1, 10),
-            max_features=trial.suggest_categorical("max_features", ["sqrt", "log2", None]),
+            # Убрали None, чтобы не превращать алгоритм в обычный бэггинг
+            max_features=trial.suggest_categorical("max_features", ["sqrt", "log2"]), 
             random_state=random_state,
         )
+        
     elif model_name == "RBF SVM":
+        # Комбинированный подход для gamma: встроенные эвристики или точное число
+        gamma_choice = trial.suggest_categorical("gamma_choice", ["scale", "auto", "float"])
+        if gamma_choice == "float":
+            gamma_val = trial.suggest_float("gamma_float", 1e-4, 1, log=True)
+        else:
+            gamma_val = gamma_choice
+            
         return svm.SVC(
-            C=trial.suggest_float("C", 1e-3, 100, log=True),
-            gamma=trial.suggest_float("gamma", 1e-4, 1, log=True),
+            # Расширен диапазон C для построения более сложных гиперплоскостей
+            C=trial.suggest_float("C", 1e-3, 1000, log=True), 
+            gamma=gamma_val,
             probability=True,
             kernel="rbf",
             random_state=random_state,
         )
+        
     elif model_name == "KNN":
         return KNeighborsClassifier(
             n_neighbors=trial.suggest_int("n_neighbors", 3, 25),
             weights=trial.suggest_categorical("weights", ["uniform", "distance"]),
             p=trial.suggest_int("p", 1, 2),
         )
+        
     elif model_name == "Decision Tree":
         return DecisionTreeClassifier(
+            # Добавлен выбор критерия разбиения
+            criterion=trial.suggest_categorical("criterion", ["gini", "entropy"]), 
             max_depth=trial.suggest_int("max_depth", 2, 10),
             min_samples_split=trial.suggest_int("min_samples_split", 2, 20),
             min_samples_leaf=trial.suggest_int("min_samples_leaf", 1, 10),
             random_state=random_state,
         )
+        
     elif model_name == "Gaussian Naive Bayes":
         return GaussianNB(
-            var_smoothing=trial.suggest_float("var_smoothing", 1e-12, 1e-6, log=True)
+            # Существенно расширен диапазон для лучшего сглаживания перекошенных признаков
+            var_smoothing=trial.suggest_float("var_smoothing", 1e-10, 1e-2, log=True) 
         )
+        
     elif model_name == "CatBoost" and CatBoostClassifier is not None:
         return CatBoostClassifier(
             iterations=trial.suggest_int("iterations", 100, 1000),
             learning_rate=trial.suggest_float("learning_rate", 1e-3, 0.3, log=True),
-            depth=trial.suggest_int("depth", 3, 10),
-            l2_leaf_reg=trial.suggest_float("l2_leaf_reg", 1e-3, 10, log=True),
+            # Сужен диапазон глубины для защиты от переобучения
+            depth=trial.suggest_int("depth", 3, 7), 
+            # Усилена регуляризация
+            l2_leaf_reg=trial.suggest_float("l2_leaf_reg", 1e-1, 30, log=True), 
+            # Добавлен бэггинг для случайной подвыборки строк
+            subsample=trial.suggest_float("subsample", 0.5, 1.0), 
+            bootstrap_type="Bernoulli", 
+            # Аналог min_samples_leaf
+            min_data_in_leaf=trial.suggest_int("min_data_in_leaf", 1, 10), 
             verbose=False,
             random_seed=random_state,
             task_type=TASK_TYPE,
         )
+        
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
@@ -174,19 +206,16 @@ def _take_rows(data, indices):
 #     return np.where(proba >= threshold, positive_label, negative_label)
 
 
-def optimize_model(
-    model_name,
-    X,
-    y,
-    n_trials,
-    cv_folds=5,
-    random_state=RANDOM_STATE
-):
-    """
-    Подбор гиперпараметров с помощью Optuna (без порога).
-    """
+def optimize_model(model_name, X, y, n_trials, cv_folds=5, random_state=RANDOM_STATE):
     def objective(trial):
+        # 1. Задаем модель
         model = build_model_by_trial(trial, model_name=model_name, random_state=random_state)
+        
+        # 2. Собираем пайплайн (Скейлер -> Модель)
+        pipeline = Pipeline([
+            ("scaler", RobustScaler()),
+            ("classifier", model)
+        ])
         
         cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
         scores = []
@@ -195,25 +224,19 @@ def optimize_model(
             X_train_fold, X_valid_fold = _take_rows(X, train_idx), _take_rows(X, valid_idx)
             y_train_fold, y_valid_fold = _take_rows(y, train_idx), _take_rows(y, valid_idx)
             
-            fold_model = clone(model)
+            # Клонируем и обучаем весь пайплайн (скейлинг произойдет ТОЛЬКО на train_fold)
+            fold_model = clone(pipeline)
             fold_model.fit(X_train_fold, y_train_fold)
             
-            # Используем стандартный predict (порог 0.5 "под капотом")
             valid_pred = fold_model.predict(X_valid_fold)
-            
-            # Считаем метрику
             score = metrics.accuracy_score(y_valid_fold, valid_pred)
             scores.append(score)
             
         mean_score = np.mean(scores)
-        std_score = np.std(scores)
-        
-        # Сохраняем std в trial, чтобы достать его позже для таблицы
-        trial.set_user_attr("cv_std", std_score)
+        trial.set_user_attr("cv_std", np.std(scores))
         
         return mean_score
 
-    # Запускаем оптимизацию с фиксированным seed для воспроизводимости
     sampler = optuna.samplers.TPESampler(seed=random_state)
     study = optuna.create_study(direction="maximize", sampler=sampler)
     study.optimize(objective, n_trials=n_trials)
@@ -222,7 +245,6 @@ def optimize_model(
     print(study.best_params)
     print(f"BEST SCORE: {study.best_value:.4f}")
 
-    # Создаем лучшую модель на основе найденных параметров
     best_model = build_model_by_trial(study.best_trial, model_name=model_name, random_state=random_state)
 
     return best_model, study
@@ -237,13 +259,18 @@ def fit_evaluate_model(
     test_X,
     test_Y,
 ) -> Tuple[dict, object]:
-    """Обучает финальную модель на всем train и оценивает на test."""
     
-    final_model = clone(estimator)
-    final_model.fit(train_X, train_Y)
+    # Собираем финальный пайплайн с лучшими параметрами
+    final_pipeline = Pipeline([
+        ("scaler", RobustScaler()),
+        ("classifier", clone(estimator))
+    ])
+    
+    # Обучаем пайплайн (он сам отмасштабирует train_X)
+    final_pipeline.fit(train_X, train_Y)
 
-    # Стандартный predict
-    test_pred = final_model.predict(test_X)
+    # Предсказываем (он сам применит скейлинг к test_X)
+    test_pred = final_pipeline.predict(test_X)
 
     result = {
         "model": model_name,
@@ -255,8 +282,7 @@ def fit_evaluate_model(
         "test_f1": metrics.f1_score(test_Y, test_pred, zero_division=0),
     }
 
-    return result, final_model
-
+    return result, final_pipeline
 
 def run_experiments(
     train_X,
@@ -277,7 +303,8 @@ def run_experiments(
     for model_name, estimator in models.items():
 
         print(f"\nOPTIMIZING: {model_name}")
-
+        # Динамически задаем количество попыток
+        n_trials = 300 if model_name in ["CatBoost", "Random Forest"] else 150
         best_model, study = optimize_model(
             model_name=model_name,
             X=train_X,

@@ -20,10 +20,12 @@ from typing import Tuple
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-
+from sklearn.ensemble import VotingClassifier
 
 from preprocessing import preprocessing_data
 from model2         import run_experiments, print_results
+from utils          import append_results_to_markdown_log
+
 
 TARGET_COLUMN = "Survived"
 TEST_SIZE = 0.30
@@ -82,21 +84,19 @@ def prepare_features(
     """
     Запускает препроцессинг и выравнивает колонки test относительно train.
     """
-    train_processed, scaler = preprocessing_data(
-        train_X,
-        fit_robust_sc=True,
+    train_processed = preprocessing_data(
+        train_X
     )
 
-    test_processed, _ = preprocessing_data(
+    test_processed = preprocessing_data(
         test_X,
-        fit_robust_sc=False,
-        scaler=scaler,
+        fit_robust_sc=False
     )
 
     # Выровняем test по колонкам train.
     test_processed = test_processed.reindex(columns=train_processed.columns, fill_value=0)
 
-    return train_processed, test_processed, scaler
+    return train_processed, test_processed
 
 def reduce_mem_usage(df):
     """Перебирает все столбцы датафрейма и изменяет тип данных для экономии памяти."""
@@ -142,7 +142,7 @@ def main():
             random_state=RANDOM_STATE,
         )
 
-    train_processed, test_processed, scaler = prepare_features(train_X, test_X)
+    train_processed, test_processed = prepare_features(train_X, test_X)
     train_processed = reduce_mem_usage(train_processed)
     test_processed  = reduce_mem_usage(test_processed)
     print("=" * 80)
@@ -160,88 +160,57 @@ def main():
     )
 
     print_results(results_df)
-    # return {
-    #     "train_data": train_data,
-    #     "train": train,
-    #     "test": test,
-    #     "train_X": train_X,
-    #     "train_Y": train_Y,
-    #     "test_X": test_X,
-    #     "test_Y": test_Y,
-    #     "X": X,
-    #     "Y": Y,
-    #     "train_processed": train_processed,
-    #     "test_processed": test_processed,
-    #     "scaler": scaler,
-    #     "results_df": results_df,
-    #     "trained_models": trained_models,
-    #     "threshold_details": threshold_details,
-    # }
-    # ==========================================================
-    # KAGGLE SUBMISSION
+    append_results_to_markdown_log(results_df, "log_final_Table.md")
+# ==========================================================
+    # KAGGLE SUBMISSION (ENSEMBLE)
     # ==========================================================
 
-    best_model_name = results_df.iloc[0]["model"]
-
     print("=" * 80)
-    print("BEST MODEL")
+    print("BUILDING ENSEMBLE")
     print("=" * 80)
-    print(best_model_name)
-    print()
 
-    best_model = trained_models[best_model_name]
+    # 1. Выбираем названия Топ-3 лучших моделей из отсортированного results_df
+    top_3_names = results_df["model"].head(3).tolist()
+    print(f"Top 3 models for ensemble: {top_3_names}\n")
+
+    # 2. Достаем их обученные пайплайны из словаря trained_models
+    # estimators - это список кортежей вида [('имя', модель), ...]
+    estimators = [(name, trained_models[name]) for name in top_3_names]
+
+    # 3. Создаем ансамбль. 
+    # voting='soft' означает, что модели будут усреднять свои вероятности, 
+    # а не просто жестко голосовать 0 или 1. Это дает лучшую точность.
+    ensemble_model = VotingClassifier(estimators=estimators, voting='soft')
 
     # ========= PREPROCESS FULL TRAIN =========
-
     full_X = train_data.drop(columns=TARGET_COLUMN)
     full_Y = train_data[TARGET_COLUMN]
 
-    full_train_processed, full_scaler = preprocessing_data(
-        full_X,
-        fit_robust_sc=True,
-    )
+    full_train_processed = preprocessing_data(full_X)
 
     # ========= PREPROCESS KAGGLE TEST =========
-
-    kaggle_test_processed, _ = preprocessing_data(
+    kaggle_test_processed = preprocessing_data(
         test_data,
-        fit_robust_sc=False,
-        scaler=full_scaler,
+        train_columns=full_train_processed.columns,
     )
 
-    kaggle_test_processed = kaggle_test_processed.reindex(
-        columns=full_train_processed.columns,
-        fill_value=0,
-    )
-
-    # ========= FIT BEST MODEL ON FULL TRAIN =========
-
-    best_model.fit(full_train_processed, full_Y)
+    # ========= FIT ENSEMBLE ON FULL TRAIN =========
+    # При вызове fit, ансамбль автоматически обучит все 3 модели внутри себя 
+    # (и их скейлеры, так как мы завернули их в пайплайны) на полных данных!
+    ensemble_model.fit(full_train_processed, full_Y)
 
     # ========= PREDICT =========
-    #print(kaggle_test_processed.isna().sum())
-    
-    test_predictions = best_model.predict(
-        kaggle_test_processed
-    )
+    # Ансамбль сам прогонит данные через 3 модели, усреднит вероятности 
+    # и выдаст итоговые классы (с порогом 0.5)
+    test_predictions = ensemble_model.predict(kaggle_test_processed)
 
     # ========= SAVE SUBMISSION =========
-
     submission = pd.DataFrame({
         "PassengerId": test_data["PassengerId"],
         "Survived": test_predictions,
     })
-
-    submission.to_csv(
-        "submission.csv",
-        index=False
-    )
-
-    print("=" * 80)
-    print("SUBMISSION SAVED")
-    print("=" * 80)
-    print("submission.csv")
-    print()
+    
+    submission.to_csv("submission_ensemble.csv", index=False)
 
 
 if __name__ == "__main__":
