@@ -25,16 +25,19 @@ config = {
             #"Decision Tree",
             #"Random Forest",
             "CatBoost"
-        ]
+        ],
+        "ensemble":"averaging"
+        #other: ["none", "averaging", "voting", "stacking_lr", "stacking_ridge"]
     },
+
     "optuna": {
         "n_trials_default": 150,
         "n_trials_complex": 300, # Для CatBoost и Random Forest
     },
     "output": {
         "log_file": "log_final_Table.md",
-        "submission_file": "submission_ensemble.csv",
-        "model_file": "ensemble_model.joblib"
+        "best_model_submission_file": "submission.csv",
+        "ensemble_submission_file": "submission_ensemble.csv",
     }
 }
 

@@ -5,16 +5,13 @@ from typing import Tuple
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import VotingClassifier
+from sklearn.ensemble import VotingClassifier, StackingClassifier
+from sklearn.linear_model import LogisticRegression, RidgeClassifier
 
 from config import config
 from preprocessing import preprocessing_data
 from model2         import run_experiments
 from utils          import append_results_to_markdown_log, print_results, reduce_mem_usage
-
-
-
-
 
 def make_train_test_split(
     data: pd.DataFrame,
@@ -53,9 +50,40 @@ def make_train_test_split(
 
     return train, test, train_X, train_Y, test_X, test_Y
 
-
-
-
+# Функция автоматической сборки ансамбля на основе конфигурации
+def get_ensemble_model(estimators):
+    """
+    estimators: список кортежей вида [('catboost', model1), ('rf', model2), ...]
+    """
+    ensemble_type = config.model.ensemble
+    
+    if ensemble_type == "averaging":
+        print("Сборка ансамбля: Усреднение предсказаний (Soft Voting)...")
+        return VotingClassifier(estimators=estimators, voting='soft')
+        
+    elif ensemble_type == "voting":
+        print("Сборка ансамбля: Голосование большинства (Hard Voting)...")
+        return VotingClassifier(estimators=estimators, voting='hard')
+        
+    elif ensemble_type == "stacking_lr":
+        print("Сборка ансамбля: Стекинг (Мета-модель: Логистическая Регрессия)...")
+        return StackingClassifier(
+            estimators=estimators,
+            final_estimator=LogisticRegression(random_state=config.RANDOM_STATE),
+            cv=config.N_SPLITS,
+            n_jobs=-1
+        )
+        
+    elif ensemble_type == "stacking_ridge":
+        print("Сборка ансамбля: Стекинг (Мета-модель: Ridge Classifier)...")
+        return StackingClassifier(
+            estimators=estimators,
+            final_estimator=RidgeClassifier(random_state=config.RANDOM_STATE),
+            cv=config.N_SPLITS,
+            n_jobs=-1
+        )
+    else:
+        raise ValueError(f"Неизвестный тип ансамблирования: {ensemble_type}")
 
 def build_and_train_ensemble():
     """Проводит эксперименты, собирает и обучает ансамбль, возвращает готовую модель."""
@@ -80,12 +108,16 @@ def build_and_train_ensemble():
     print_results(results_df)
     append_results_to_markdown_log(results_df, config.output.log_file)
 
+    best_model_name = results_df.iloc[0]["model"]
+    best_single_model = trained_models[best_model_name]
+    
+
     # Собираем ансамбль из топ-3
     top_3_names = results_df["model"].head(3).tolist()
     print(f"\nTop 3 models for ensemble: {top_3_names}")
     
     estimators = [(name, trained_models[name]) for name in top_3_names]
-    ensemble_model = VotingClassifier(estimators=estimators, voting='soft')
+    ensemble_model = get_ensemble_model(estimators)
 
     # Обучаем ансамбль на полных данных
     full_X = train_data.drop(columns=config.data.target_column)
@@ -93,8 +125,9 @@ def build_and_train_ensemble():
     
     full_train_processed = reduce_mem_usage(preprocessing_data(full_X))
     
-    print("\nFitting final ensemble on full training data...")
+    print("\nFitting on full training data...")
+    best_single_model.fit(full_train_processed, full_Y)
     ensemble_model.fit(full_train_processed, full_Y)
     
     # ВОЗВРАЩАЕМ ГОТОВУЮ МОДЕЛЬ
-    return ensemble_model
+    return best_single_model, ensemble_model

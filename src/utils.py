@@ -11,6 +11,8 @@ import optuna
 
 from catboost import CatBoostClassifier
 
+from config import config
+
 # 1. Создаем фильтр для форматирования чисел и времени
 class OptunaLogFormatter(logging.Filter):
     def __init__(self, digits=4):
@@ -133,7 +135,15 @@ def append_results_to_markdown_log(results_df: pd.DataFrame, file_path: str = "l
     md_lines.append("\n" + "=" * 80)
     md_lines.append(f"### MODEL COMPARISON ({current_time})")  # Метка времени теперь здесь
     md_lines.append("=" * 80 + "\n")
+
     
+    md_lines.append("**Run Configuration:**")
+    md_lines.append(f"- **Seed:** `{config.general.seed}`")
+    md_lines.append(f"- **CV Folds:** `{config.model.cv_folds}`")
+    md_lines.append(f"- **Ensemble Type:** `{config.model.ensemble}`")
+    md_lines.append(f"- **Optuna Trials (Default):** `{config.optuna.n_trials_default}`")
+    md_lines.append(f"- **Optuna Trials (Complex):** `{config.optuna.n_trials_complex}`\n")
+
     # Заголовки таблицы
     headers = [
         "Model", "CV Accuracy Mean", "CV Accuracy Std", 
