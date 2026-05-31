@@ -1,14 +1,4 @@
-"""
-model.py
 
-Обучение и сравнение моделей. (Обновлено: Threshold подбирается внутри Optuna)
-
-train + optuna (cv) -> [best params + best threshold]
-   ↓
-fit on full train (с лучшими параметрами)
-   ↓
-evaluate on test (с лучшим порогом)
-"""
 
 from __future__ import annotations
 
@@ -18,7 +8,8 @@ import numpy as np
 import pandas as pd
 
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import RobustScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, RobustScaler
 
 from sklearn.model_selection import StratifiedKFold
 from sklearn import metrics, svm
@@ -35,32 +26,19 @@ try:
 except ImportError:
     CatBoostClassifier = None
 
-import optuna
+
+from utils import take_Optuna_with_modify_logs
+optuna = take_Optuna_with_modify_logs()
 
 RANDOM_STATE = 42
 CV_FOLDS = 2
 POSITIVE_LABEL = 1
 NEGATIVE_LABEL = 0
 
-
-
-def _get_catboost_task_type() -> str:
-    """Определяет, доступна ли видеокарта для обучения CatBoost."""
-    if CatBoostClassifier is None:
-        return "CPU"
-    try:
-        from catboost.utils import get_gpu_device_count
-        # Если найдена хотя бы одна видеокарта с поддержкой CUDA
-        if get_gpu_device_count() > 0:
-            return "GPU"
-    except Exception:
-        # Если библиотека скомпилирована без GPU или возникла ошибка драйверов
-        pass
-    return "CPU"
-
 #в Титанике небольшой датасет, поэтому переход на GPU замедляет моделирование в целом.
 TASK_TYPE = "CPU"
 #_get_catboost_task_type()
+
 
 def get_models(random_state: int = RANDOM_STATE) -> Dict[str, object]:
     """Возвращает базовые модели."""
@@ -184,27 +162,26 @@ def _take_rows(data, indices):
         return data.iloc[indices]
     return data[indices]
 
-# def _positive_class_proba(model, X, positive_label: int = POSITIVE_LABEL) -> np.ndarray:
-#     """Возвращаем вероятность положительного класса из predict_proba."""
-#     if not hasattr(model, "predict_proba"):
-#         raise TypeError(f"Model {type(model).__name__} does not support predict_proba")
 
-#     classes = list(model.classes_)
-#     if positive_label not in classes:
-#         raise ValueError(f"Positive label {positive_label} was not found in model classes: {classes}")
-
-#     positive_class_index = classes.index(positive_label)
-#     return model.predict_proba(X)[:, positive_class_index]
-
-# def _predict_by_threshold(
-#     proba: np.ndarray,
-#     threshold: float,
-#     positive_label: int = POSITIVE_LABEL,
-#     negative_label: int = NEGATIVE_LABEL,
-# ) -> np.ndarray:
-#     """Возвращает классы по вероятности исходя из выбранного threshold."""
-#     return np.where(proba >= threshold, positive_label, negative_label)
-
+def get_preprocessor():
+    """Создает трансформер: OHE для категорий, RobustScaler для всего остального."""
+    categorical_features = ['Sex', 'Deck']
+    
+    return ColumnTransformer(
+        transformers=[
+            (
+                'cat', 
+                OneHotEncoder(
+                    drop='first',             # Избегаем ловушки фиктивных переменных
+                    handle_unknown='ignore',  # Если в test попадется новая палуба — ставим нули
+                    sparse_output=False       # Возвращаем обычный массив (нужно для деревьев)
+                ), 
+                categorical_features
+            )
+        ],
+        # К остальным (числовым) колонкам применяем масштабирование
+        remainder=RobustScaler() 
+    )
 
 def optimize_model(model_name, X, y, n_trials, cv_folds=5, random_state=RANDOM_STATE):
     def objective(trial):
@@ -213,7 +190,7 @@ def optimize_model(model_name, X, y, n_trials, cv_folds=5, random_state=RANDOM_S
         
         # 2. Собираем пайплайн (Скейлер -> Модель)
         pipeline = Pipeline([
-            ("scaler", RobustScaler()),
+            ("preprocessor", get_preprocessor()),
             ("classifier", model)
         ])
         
@@ -262,9 +239,9 @@ def fit_evaluate_model(
     
     # Собираем финальный пайплайн с лучшими параметрами
     final_pipeline = Pipeline([
-        ("scaler", RobustScaler()),
-        ("classifier", clone(estimator))
-    ])
+            ("preprocessor", get_preprocessor()),
+            ("classifier", clone(estimator))
+        ])
     
     # Обучаем пайплайн (он сам отмасштабирует train_X)
     final_pipeline.fit(train_X, train_Y)
@@ -292,7 +269,7 @@ def run_experiments(
     models: Optional[Dict[str, object]] = None,
     cv_folds: int = CV_FOLDS,
     n_trials: int = 100,
-) -> Tuple[pd.DataFrame, Dict[str, object]]:
+    ) -> Tuple[pd.DataFrame, Dict[str, object]]:
     """Запускает обучение и сравнение всех моделей."""
     if models is None:
         models = get_models()
@@ -331,10 +308,6 @@ def run_experiments(
         results.append(result)
         trained_models[model_name] = fitted_model
 
-    # results_df = pd.DataFrame(results).sort_values(
-    #     by=["cv_accuracy_mean", "test_accuracy"],
-    #     ascending=False,
-    # )
     # Сортируем сначала по среднему, затем по отклонению
     # Mean - по убыванию (False), Std - по возрастанию (True)
     results_df = pd.DataFrame(results).sort_values(
@@ -344,20 +317,3 @@ def run_experiments(
     return results_df, trained_models
 
 
-def print_results(results_df: pd.DataFrame) -> None:
-    """Печатает итоговую таблицу в компактном виде."""
-    columns = [
-        "model",
-        "cv_accuracy_mean",
-        "cv_accuracy_std",
-        "test_accuracy",
-        "test_precision",
-        "test_recall",
-        "test_f1",
-    ]
-
-    print("\n" + "=" * 100)
-    print("MODEL COMPARISON")
-    print("=" * 100)
-    print(results_df[columns].round(4).to_string(index=False))
-    print()

@@ -1,6 +1,115 @@
 import os
-import pandas as pd
 from datetime import datetime 
+
+import pandas as pd
+import numpy as np
+
+
+import logging
+import re
+import optuna
+
+from catboost import CatBoostClassifier
+
+# 1. Создаем фильтр для форматирования чисел и времени
+class OptunaLogFormatter(logging.Filter):
+    def __init__(self, digits=4):
+        super().__init__()
+        self.digits = digits
+    def filter(self, record):
+        msg = str(record.msg)
+        
+        # 1. Округляем все длинные числа с плавающей точкой
+        msg = re.sub(r'(\d+\.\d{5,})', lambda m: f"{float(m.group(1)):.{self.digits}f}", msg)
+        
+        # 2. Убираем "finished with value:" -> заменяем на "->" или "="
+        msg = msg.replace("finished with value:", "->")
+        
+        # 3. Убираем "and parameters:" -> заменяем на "|"
+        msg = msg.replace("and parameters:", "|")
+        
+        msg = msg.replace("with value:", "=")
+        
+        record.msg = msg
+        return True
+
+def take_Optuna_with_modify_logs():
+    # 2. Настраиваем формат времени (убираем дату, оставляем только ЧЧ:ММ:СС)
+    optuna.logging.set_verbosity(optuna.logging.INFO)
+    logger = optuna.logging.get_logger("optuna")
+
+    # Меняем формат обработчика (handler)
+    if logger.handlers:
+        handler = logger.handlers[0]
+        # %s в конце — это сообщение, которое уже обработано нашим фильтром
+        handler.setFormatter(logging.Formatter('[I %(asctime)s] %(message)s', datefmt='%H:%M:%S'))
+        handler.addFilter(OptunaLogFormatter())
+    return optuna
+
+def reduce_mem_usage(df):
+    """Перебирает все столбцы датафрейма и изменяет тип данных для экономии памяти."""
+    start_mem = df.memory_usage().sum() / 1024**2
+    print(f'Исходный размер памяти: {start_mem:.4f} MB')
+    
+    for col in df.columns:
+        col_type = df[col].dtype
+        
+        # Пропускаем текстовые/категориальные колонки
+        if col_type != object and col_type.name != 'category' and col_type != 'bool':
+            c_min = df[col].min()
+            c_max = df[col].max()
+            
+            # Обработка целочисленных типов
+            if str(col_type)[:3] == 'int':
+                if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
+                    df[col] = df[col].astype(np.int8)
+                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
+                    df[col] = df[col].astype(np.int16)
+                elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                    df[col] = df[col].astype(np.int32)
+            # Обработка типов с плавающей точкой (float)
+            else:
+                if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
+                    df[col] = df[col].astype(np.float16)
+                elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+                    df[col] = df[col].astype(np.float32)
+                    
+    end_mem = df.memory_usage().sum() / 1024**2
+    print(f'Размер памяти после оптимизации: {end_mem:.4f} MB')
+    
+    return df
+
+def _get_catboost_task_type() -> str:
+    """Определяет, доступна ли видеокарта для обучения CatBoost."""
+    if CatBoostClassifier is None:
+        return "CPU"
+    try:
+        from catboost.utils import get_gpu_device_count
+        # Если найдена хотя бы одна видеокарта с поддержкой CUDA
+        if get_gpu_device_count() > 0:
+            return "GPU"
+    except Exception:
+        # Если библиотека скомпилирована без GPU или возникла ошибка драйверов
+        pass
+    return "CPU"
+
+def print_results(results_df: pd.DataFrame) -> None:
+    """Печатает итоговую таблицу в компактном виде."""
+    columns = [
+        "model",
+        "cv_accuracy_mean",
+        "cv_accuracy_std",
+        "test_accuracy",
+        "test_precision",
+        "test_recall",
+        "test_f1",
+    ]
+
+    print("\n" + "=" * 100)
+    print("MODEL COMPARISON")
+    print("=" * 100)
+    print(results_df[columns].round(4).to_string(index=False))
+    print()
 
 def append_results_to_markdown_log(results_df: pd.DataFrame, file_path: str = "log_final_Table.md"):
     """
