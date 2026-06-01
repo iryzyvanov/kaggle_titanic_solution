@@ -10,7 +10,7 @@ from sklearn.preprocessing import OneHotEncoder, RobustScaler
 
 import pandas as pd
 import numpy as np
-
+from config import config
 
 REPLACEMENT_HONORIFICS = {
     'Mlle': 'Miss',
@@ -52,9 +52,6 @@ def fill_age_by_honorifics(df):
 
         df.loc[mask, 'Age'] = (AGE_BY_INITIAL_DOUBLE[honorific])
 
-    # fallback
-    df['Age'] = df['Age'].fillna(df['Age'].median())
-
     df.drop('Honorific', axis=1, inplace=True)
 
 def create_FamilySize(df):
@@ -65,9 +62,6 @@ def create_IsAlone(df):
         df["FamilySize"] == 1).astype(int)
 
 def create_FareLog(df):
-    df['Fare'] = df['Fare'].fillna(
-        df['Fare'].median()
-    )
     df['FareLog'] = np.log1p(df['Fare'])
 
 def drop_features(df):
@@ -101,17 +95,26 @@ def preprocessing_data(df):
 
     return df_copy
 
-
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
 
 def get_preprocessor():
-    """Создает трансформер: OHE для категорий, RobustScaler для всего остального."""
-    categorical_features = ['Sex', 'Deck']
-    
+    """Создает трансформер: OHE для категорий, пропускаем бинарные, RobustScaler для всего остального."""
+    categorical_features = list(config.data.categorical_features)
+    binary_features      = list(config.data.binary_features)
+
+    # Создаем конвейер для числовых фичей: честное заполнение пропусков -> масштабирование
+    numeric_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='median')),
+        ('scaler', RobustScaler())
+    ])
     return ColumnTransformer(transformers=
             [('cat', OneHotEncoder(
                     drop='first',             # Избегаем ловушки фиктивных переменных
                     handle_unknown='ignore',  # Если в test попадется новая палуба — ставим нули
                     sparse_output=False),     # Возвращаем обычный массив (нужно для деревьев)
-                categorical_features)],
+                categorical_features ),
+                ('bin', 'passthrough', binary_features )
+            ],
         # К остальным (числовым) колонкам применяем масштабирование
-        remainder=RobustScaler())
+        remainder=numeric_transformer)
