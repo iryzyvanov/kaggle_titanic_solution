@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Tuple
 
+
+from typing import Tuple
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -11,7 +12,7 @@ from sklearn.linear_model import LogisticRegression, RidgeClassifier
 from config import config
 from preprocessing import preprocessing_data
 from model         import run_experiments
-from utils          import append_results_to_markdown_log, print_results, reduce_mem_usage
+from utils          import append_results_to_markdown_log, print_results, reduce_mem_usage, save_all_models
 
 def make_train_test_split(
     data: pd.DataFrame,
@@ -42,11 +43,9 @@ def make_train_test_split(
     Y = data[target_column]
 
     print("=" * 80)
-    print("TRAIN/TEST SPLIT")
-    print("=" * 80)
     print(f"Train shape: {train_X.shape}")
     print(f"Test shape:  {test_X.shape}")
-    print()
+    print("=" * 80)
 
     return train, test, train_X, train_Y, test_X, test_Y
 
@@ -87,9 +86,6 @@ def get_ensemble_model(estimators):
 
 def build_and_train_ensemble():
     """Проводит эксперименты, собирает и обучает ансамбль, возвращает готовую модель."""
-    print("=" * 80)
-    print("STARTING TRAINING PIPELINE")
-    print("=" * 80)
     
     train_data = pd.read_csv(config.data.train_path)
 
@@ -129,5 +125,8 @@ def build_and_train_ensemble():
     best_single_model.fit(full_train_processed, full_Y)
     ensemble_model.fit(full_train_processed, full_Y)
     
-    # ВОЗВРАЩАЕМ ГОТОВУЮ МОДЕЛЬ
+    # === СОХРАНЕНИЕ ВСЕХ МОДЕЛЕЙ ===
+    save_all_models(trained_models, ensemble_model)
+
     return best_single_model, ensemble_model
+

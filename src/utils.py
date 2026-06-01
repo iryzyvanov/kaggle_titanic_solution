@@ -1,4 +1,5 @@
 import os
+import joblib
 from datetime import datetime 
 
 import pandas as pd
@@ -109,7 +110,7 @@ def print_results(results_df: pd.DataFrame) -> None:
         "test_f1",
     ]
 
-    print("\n" + "=" * 100)
+    print("\n" + "=" * 120)
     print("MODEL COMPARISON")
     print("=" * 100)
     print(results_df[columns].round(4).to_string(index=False))
@@ -180,3 +181,17 @@ def append_results_to_markdown_log(results_df: pd.DataFrame, file_path: str = "l
         f.write("\n".join(md_lines) + "\n")
         
     print(f"Результаты успешно добавлены в конец файла: {file_path}")
+
+def save_all_models(trained_models, ensemble_model):
+    # === СОХРАНЕНИЕ ВСЕХ МОДЕЛЕЙ ===
+    os.makedirs("models", exist_ok=True)
+    
+    # 1. Сохраняем каждую модель из словаря trained_models
+    for name, fitted_model in trained_models.items():
+        # Заменяем пробелы на подчеркивания для красивых имен файлов
+        safe_name = name.replace(" ", "_")
+        joblib.dump(fitted_model, rf"models\{safe_name}.joblib")
+    
+    # 2. Сохраняем готовый ансамбль (для сложных типов вроде Stacking)
+    joblib.dump(ensemble_model, config.output.ensemble_joblib)
+    print("Все модели и ансамбль успешно сохранены в папку models/")

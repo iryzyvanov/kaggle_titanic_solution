@@ -5,6 +5,8 @@
 # создание новых признаков
 # кодирование категорий
 
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, RobustScaler
 
 import pandas as pd
 import numpy as np
@@ -35,12 +37,7 @@ AGE_BY_INITIAL_DOUBLE = {
     'Miss'  : 21.860,
     'Other' : 45.888889
 }
-NUMERIC_FEATURES = [
-    'Age',
-    'FamilySize',
-    'FareLog',
-    'Pclass'
-]
+
 FEATURES_TO_DROP = ['PassengerId','Name','Ticket','Cabin','Embarked']
 
 def extract_and_set_honorifics(df):
@@ -103,3 +100,18 @@ def preprocessing_data(df):
     drop_features(df_copy)
 
     return df_copy
+
+
+
+def get_preprocessor():
+    """Создает трансформер: OHE для категорий, RobustScaler для всего остального."""
+    categorical_features = ['Sex', 'Deck']
+    
+    return ColumnTransformer(transformers=
+            [('cat', OneHotEncoder(
+                    drop='first',             # Избегаем ловушки фиктивных переменных
+                    handle_unknown='ignore',  # Если в test попадется новая палуба — ставим нули
+                    sparse_output=False),     # Возвращаем обычный массив (нужно для деревьев)
+                categorical_features)],
+        # К остальным (числовым) колонкам применяем масштабирование
+        remainder=RobustScaler())

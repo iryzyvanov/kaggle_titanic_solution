@@ -5,6 +5,8 @@ from omegaconf import OmegaConf
 config = {
     "general":{
         "seed":42,
+        # Режимы: "TUNE" (поиск гиперпар.), "TRAIN" (быстрое обучение по .json), "PREDICT" (инференс)
+        "mode":"TRAIN",
     },
     "data": {
         "train_path": "data/train.csv",
@@ -26,18 +28,23 @@ config = {
             #"Random Forest",
             "CatBoost"
         ],
-        "ensemble":"averaging"
+        "ensemble":"stacking_lr"
         #other: ["none", "averaging", "voting", "stacking_lr", "stacking_ridge"]
     },
 
     "optuna": {
-        "n_trials_default": 150,
-        "n_trials_complex": 300, # Для CatBoost и Random Forest
+        "n_trials_default": 10,
+        "n_trials_complex": 3, # Для CatBoost и Random Forest
     },
     "output": {
         "log_file": "log_final_Table.md",
-        "best_model_submission_file": "submission.csv",
-        "ensemble_submission_file": "submission_ensemble.csv",
+
+        "best_model_submission_file": "subs/submission.csv",
+        "ensemble_submission_file": "subs/submission_ensemble.csv",
+
+        "params_file":       "models/best_params.json",
+        "best_model_joblib": "models/best_model.joblib",
+        "ensemble_joblib":   "models/ensemble.joblib",
     }
 }
 

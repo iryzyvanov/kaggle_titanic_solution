@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from typing import Callable, Dict, Iterable, Optional, Tuple
-
+import json
+import os
 import numpy as np
 import pandas as pd
 
 from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, RobustScaler
+
 
 from sklearn.model_selection import StratifiedKFold
 from sklearn import metrics, svm
@@ -27,43 +27,11 @@ except ImportError:
     CatBoostClassifier = None
 
 from config import config
+from preprocessing import get_preprocessor
 from utils import take_Optuna_with_modify_logs
 optuna = take_Optuna_with_modify_logs()
 
-
-
-
-def get_models(random_state: int = config.general.seed) -> Dict[str, object]:
-    """Возвращает базовые модели."""
-    all_available_models: Dict[str, object] = {
-        "Logistic Regression": LogisticRegression(
-            max_iter=5_000, random_state=random_state, solver="liblinear"
-        ),
-        "RBF SVM": svm.SVC(
-            kernel="rbf", probability=True, random_state=random_state
-        ),
-        "KNN": KNeighborsClassifier(),
-        "Gaussian Naive Bayes": GaussianNB(),
-        "Decision Tree": DecisionTreeClassifier(random_state=random_state),
-        "Random Forest": RandomForestClassifier(random_state=random_state),
-    }
-
-    if CatBoostClassifier is not None:
-        all_available_models["CatBoost"] = CatBoostClassifier(
-            loss_function="Logloss",
-            eval_metric="Accuracy",
-            random_seed=random_state,
-            task_type=config.model.task_type,
-            verbose=False,
-            border_count = 64
-        )
-    active_models = {}
-    for model_name in config.model.active_models:
-        if model_name in all_available_models:
-            active_models[model_name] = all_available_models[model_name]
-        else:
-            print(f"⚠️ Предупреждение: Модель '{model_name}' запрошена в конфиге, но не найдена или не поддерживается.")
-    return active_models
+from optuna.trial import FixedTrial
 
 def build_model_by_trial(trial, model_name, random_state=config.general.seed):
     """Строит классификатор на основе гиперпараметров из trial."""
@@ -161,25 +129,7 @@ def _take_rows(data, indices):
     return data[indices]
 
 
-def get_preprocessor():
-    """Создает трансформер: OHE для категорий, RobustScaler для всего остального."""
-    categorical_features = ['Sex', 'Deck']
-    
-    return ColumnTransformer(
-        transformers=[
-            (
-                'cat', 
-                OneHotEncoder(
-                    drop='first',             # Избегаем ловушки фиктивных переменных
-                    handle_unknown='ignore',  # Если в test попадется новая палуба — ставим нули
-                    sparse_output=False       # Возвращаем обычный массив (нужно для деревьев)
-                ), 
-                categorical_features
-            )
-        ],
-        # К остальным (числовым) колонкам применяем масштабирование
-        remainder=RobustScaler() 
-    )
+
 
 def optimize_model(model_name, X, y, n_trials, cv_folds=5, random_state=config.general.seed):
     def objective(trial):
@@ -232,8 +182,7 @@ def fit_evaluate_model(
     train_X,
     train_Y,
     test_X,
-    test_Y,
-) -> Tuple[dict, object]:
+    test_Y,) -> Tuple[dict, object]:
     
     # Собираем финальный пайплайн с лучшими параметрами
     final_pipeline = Pipeline([
@@ -260,54 +209,75 @@ def fit_evaluate_model(
     return result, final_pipeline
 
 def run_experiments(
-    train_X,
-    train_Y,
-    test_X,
-    test_Y,
-    cv_folds: int = config.model.cv_folds
-    ) -> Tuple[pd.DataFrame, Dict[str, object]]:
-    """Запускает обучение и сравнение всех моделей."""
+    train_X, train_Y, test_X, test_Y, cv_folds: int = config.model.cv_folds
+) -> Tuple[pd.DataFrame, Dict[str, object]]:
+    """Запускает обучение и сравнение всех моделей с учетом режима TUNE/TRAIN."""
 
+    mode = config.general.mode
+    params_path = config.output.params_file
+    
     results = []
     trained_models = {}
 
+    # Если режим TRAIN, пытаемся загрузить готовые параметры
+    if mode == "TRAIN":
+        if not os.path.exists(params_path):
+            print(f"Файл {params_path} не найден! Принудительно включаем режим TUNE.")
+            mode = "TUNE"
+        else:
+            print(f"\n[INFO] Загрузка гиперпараметров из {params_path}...")
+            with open(params_path, 'r', encoding='utf-8') as f:
+                saved_data = json.load(f)
+            best_params_dict = saved_data["params"]
+            saved_results = saved_data["results"]
+
+    if mode == "TUNE":
+        best_params_dict = {}
+        saved_results = []
+
     for model_name in config.model.active_models:
+        if mode == "TUNE":
+            print(f"\nOPTIMIZING: {model_name}")
+            n_trials = config.optuna.n_trials_complex if model_name in ["CatBoost", "Random Forest"] else config.optuna.n_trials_default
+            best_model, study = optimize_model(model_name, X=train_X, y=train_Y, n_trials=n_trials, cv_folds=cv_folds)
+            
+            # Сохраняем найденное
+            best_params_dict[model_name] = study.best_params
+            cv_mean = study.best_value
+            cv_std = study.best_trial.user_attrs.get("cv_std", np.nan)
+            
+        elif mode == "TRAIN":
+            print(f"\nFAST TRAINING: {model_name} (Используем сохраненные параметры)")
+            # берем ранее полученные параметры
+            trial = FixedTrial(best_params_dict[model_name])
+            best_model = build_model_by_trial(trial, model_name=model_name)
+            
+            # Восстанавливаем метрики кросс-валидации из файла
+            res_info = next((item for item in saved_results if item["model"] == model_name), None)
+            cv_mean = res_info["cv_accuracy_mean"] if res_info else 0.0
+            cv_std = res_info["cv_accuracy_std"] if res_info else 0.0
 
-        print(f"\nOPTIMIZING: {model_name}")
-        
-        n_trials = config.optuna.n_trials_complex if model_name in ["CatBoost", "Random Forest"] else config.optuna.n_trials_default
-        best_model, study = optimize_model(
-            model_name=model_name,
-            X=train_X,
-            y=train_Y,
-            n_trials=n_trials,
-            cv_folds=cv_folds,
-        )
-        
-        cv_mean = study.best_value
-        cv_std = study.best_trial.user_attrs.get("cv_std", np.nan)
-
-        # Обучение на полных данных и оценка на тесте
+        # Обучение на полных данных (train_X) и оценка на отложенном тесте (test_X)
         result, fitted_model = fit_evaluate_model(
-            model_name=model_name,
-            estimator=best_model,
-            cv_mean=cv_mean,
-            cv_std=cv_std,
-            train_X=train_X,
-            train_Y=train_Y,
-            test_X=test_X,
-            test_Y=test_Y,
+            model_name=model_name, estimator=best_model, cv_mean=cv_mean, cv_std=cv_std,
+            train_X=train_X, train_Y=train_Y, test_X=test_X, test_Y=test_Y,
         )
-
         results.append(result)
         trained_models[model_name] = fitted_model
 
-    # Сортируем сначала по среднему, затем по отклонению
-    # Mean - по убыванию (False), Std - по возрастанию (True)
-    results_df = pd.DataFrame(results).sort_values(
-            by=["cv_accuracy_mean", "cv_accuracy_std"], 
-            ascending=[False, True], 
-        )
+    results_df = pd.DataFrame(results).round(5).sort_values(by=["cv_accuracy_mean", "cv_accuracy_std"], ascending=[False, True])
+
+    # Если мы искали параметры, сохраняем их в JSON на будущее
+    if mode == "TUNE":
+        save_data = {
+            "general_params":{"cv_folds":config.model.cv_folds},
+            "params": best_params_dict,
+            "results": results_df.to_dict(orient="records")
+        }
+        with open(params_path, "w", encoding="utf-8") as f:
+            json.dump(save_data, f, indent=4, ensure_ascii=False)
+        print(f"\nВсе гиперпараметры сохранены в файл: {params_path}")
+
     return results_df, trained_models
 
 
