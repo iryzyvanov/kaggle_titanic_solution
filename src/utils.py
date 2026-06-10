@@ -1,7 +1,9 @@
 import os
+from pathlib import Path
 import joblib
+import json
 from datetime import datetime 
-
+from typing import Optional
 import pandas as pd
 import numpy as np
 
@@ -10,7 +12,10 @@ import logging
 import re
 import optuna
 
-from catboost import CatBoostClassifier
+try:
+    from catboost import CatBoostClassifier
+except ImportError:
+    CatBoostClassifier = None
 
 from config import config
 
@@ -84,6 +89,7 @@ def reduce_mem_usage(df, verbose = False):
     
     return df
 
+#Not using in Titanic
 def _get_catboost_task_type() -> str:
     """Определяет, доступна ли видеокарта для обучения CatBoost."""
     if CatBoostClassifier is None:
@@ -116,7 +122,7 @@ def print_results(results_df: pd.DataFrame) -> None:
     print(results_df[columns].round(4).to_string(index=False))
     print()
 
-def append_results_to_markdown_log(results_df: pd.DataFrame, file_path: str = "log_final_Table.md"):
+def append_results_to_markdown_log(results_df: pd.DataFrame, file_path: str = config.output.log_file):
     """
     Преобразует results_df в Markdown-таблицу и добавляет её в конец указанного файла.
     В заголовок автоматически добавляется текущая дата и время.
@@ -183,15 +189,78 @@ def append_results_to_markdown_log(results_df: pd.DataFrame, file_path: str = "l
     print(f"Результаты успешно добавлены в конец файла: {file_path}")
 
 def save_all_models(trained_models, ensemble_model):
-    # === СОХРАНЕНИЕ ВСЕХ МОДЕЛЕЙ ===
-    os.makedirs("models", exist_ok=True)
+    # Создаем объект директории
+    models_dir = Path(config.output.folder_for_joblib)
+    models_dir.mkdir(parents=True, exist_ok=True)
     
-    # 1. Сохраняем каждую модель из словаря trained_models
     for name, fitted_model in trained_models.items():
-        # Заменяем пробелы на подчеркивания для красивых имен файлов
         safe_name = name.replace(" ", "_")
-        joblib.dump(fitted_model, rf"models\{safe_name}.joblib")
+        
+        # Элегантно собираем путь
+        model_path = models_dir / f"{safe_name}.joblib"
+        
+        joblib.dump(fitted_model, model_path)
     
     # 2. Сохраняем готовый ансамбль (для сложных типов вроде Stacking)
-    joblib.dump(ensemble_model, config.output.ensemble_joblib)
-    print("Все модели и ансамбль успешно сохранены в папку models/")
+    joblib.dump(ensemble_model, models_dir / f"ensemble_{config.model.ensemble}.joblib")
+    print(f"Все модели и ансамбль успешно сохранены в папку {config.output.folder_for_joblib}")
+
+def save_submission_file(predictions: np.ndarray, passenger_ids: pd.Series, output_path: str) -> None:
+    """
+    [DRY Helper] Формирует стандартный Kaggle-датафрейм и сохраняет его на диск.
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({
+        "PassengerId": passenger_ids,
+        "Survived": predictions
+    }).to_csv(output_path, index=False)
+    print(f"[SUCCESS] Submission saved to: {output_path}")
+
+def get_loaded_models(model_names: list[str]) -> list:
+    """
+    Загружает список базовых моделей с диска.
+    """
+    loaded_models = []
+    models_dir = Path(config.output.folder_for_joblib)
+    for model_name in model_names:
+        # Заменяем пробелы на подчеркивания, как при сохранении
+        safe_name = model_name.replace(" ", "_")
+        model_path = models_dir / f"{safe_name}.joblib"
+        
+        if model_path.exists():
+            model = joblib.load(model_path)
+            loaded_models.append(model)
+            print(f"  [+] {model_name} -> Успешно загружена")
+        else:
+            print(f" Модель '{model_name}' не найдена по пути {model_path}!")
+            
+    return loaded_models
+
+def load_json_file(file_path: str) -> Optional[dict]:
+    """Безопасно загружает JSON файл, если он существует."""
+    if not os.path.exists(file_path):
+        return None
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def save_json_file(file_path: str, data: dict) -> None:
+    """Сохраняет словарь в JSON файл, создавая папки при необходимости."""
+    dir_name = os.path.dirname(file_path)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+def load_ensemble_model():
+    """
+    Загружает сохраненный ансамбль с диска для чистого инференса.
+    """
+    model_path = Path(config.output.folder_for_joblib) / f"ensemble_{config.model.ensemble}.joblib"
+    
+    if not model_path.exists():
+        raise FileNotFoundError(f"Файл ансамбля не найден: {model_path}")
+        
+    print(f"  [+] Ансамбль -> Успешно загружен из {model_path}")
+    return joblib.load(model_path)

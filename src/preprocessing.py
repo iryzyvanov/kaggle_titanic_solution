@@ -108,7 +108,7 @@ def get_preprocessor():
         ('imputer', SimpleImputer(strategy='median')),
         ('scaler', RobustScaler())
     ])
-    return ColumnTransformer(transformers=
+    preprocessor = ColumnTransformer(transformers=
             [('cat', OneHotEncoder(
                     drop='first',             # Избегаем ловушки фиктивных переменных
                     handle_unknown='ignore',  # Если в test попадется новая палуба — ставим нули
@@ -118,3 +118,6 @@ def get_preprocessor():
             ],
         # К остальным (числовым) колонкам применяем масштабирование
         remainder=numeric_transformer)
+    # Заставляем трансформер возвращать DataFrame
+    preprocessor.set_output(transform="pandas")
+    return preprocessor

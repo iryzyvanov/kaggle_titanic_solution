@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 
-from typing import Tuple
+from typing import Tuple,Optional
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -11,7 +11,7 @@ from sklearn.linear_model import LogisticRegression, RidgeClassifier
 
 from config import config
 from preprocessing import preprocessing_data
-from model         import run_experiments
+from trainer         import run_experiments
 from utils          import append_results_to_markdown_log, print_results, reduce_mem_usage, save_all_models
 
 def make_train_test_split(
@@ -19,7 +19,7 @@ def make_train_test_split(
     target_column: str = config.data.target_column,
     test_size: float = config.data.test_size,
     random_state: int = config.general.seed,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
     """
     Делит данные на train/test с сохранением баланса классов.
     """
@@ -84,7 +84,8 @@ def get_ensemble_model(estimators):
     else:
         raise ValueError(f"Неизвестный тип ансамблирования: {ensemble_type}")
 
-def build_and_train_ensemble():
+
+def build_and_train_ensemble(saved_data: Optional[dict] = None):
     """Проводит эксперименты, собирает и обучает ансамбль, возвращает готовую модель."""
     
     train_data = pd.read_csv(config.data.train_path)
@@ -94,12 +95,12 @@ def build_and_train_ensemble():
     train_processed = reduce_mem_usage(preprocessing_data(train_X), verbose=True)
     test_processed  = reduce_mem_usage(preprocessing_data(test_X), verbose=True)
 
-    results_df, trained_models = run_experiments(
+    results_df, trained_models,best_params_dict = run_experiments(
         train_X=train_processed,
         train_Y=train_Y,
         test_X=test_processed,
         test_Y=test_Y,
-    )
+        saved_data=saved_data)
 
     print_results(results_df)
     append_results_to_markdown_log(results_df, config.output.log_file)
@@ -109,8 +110,12 @@ def build_and_train_ensemble():
     
 
     # Собираем ансамбль из топ-3
-    top_3_names = results_df["model"].head(3).tolist()
-    print(f"\nTop 3 models for ensemble: {top_3_names}")
+    models_to_ensemble = config.model.ensemble_models
+    if (models_to_ensemble == "top3"):
+        top_3_names = results_df["model"].head(3).tolist()
+    else:
+        top_3_names = list(models_to_ensemble)
+    print(f"\nModels for ensemble: {top_3_names}")
     
     estimators = [(name, trained_models[name]) for name in top_3_names]
     ensemble_model = get_ensemble_model(estimators)
@@ -127,6 +132,10 @@ def build_and_train_ensemble():
     
     # === СОХРАНЕНИЕ ВСЕХ МОДЕЛЕЙ ===
     save_all_models(trained_models, ensemble_model)
-
-    return best_single_model, ensemble_model
+    exp_results = {
+        "general_params": {"cv_folds": config.model.cv_folds},
+        "params": best_params_dict,
+        "results": results_df.to_dict(orient="records")
+    }
+    return best_single_model, ensemble_model,exp_results
 

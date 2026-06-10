@@ -6,33 +6,39 @@ config = {
     "general":{
         "seed":42,
         # Режимы: "TUNE" (поиск гиперпар.), "TRAIN" (быстрое обучение по .json), "PREDICT" (инференс)
-        "mode":"TRAIN",
+        "mode":"TUNE",
     },
     "data": {
         "train_path": "data/train.csv",
         "test_path": "data/test.csv",
         "target_column": "Survived",
         "test_size": 0.30,
+        "categorical_features":['Sex', 'Deck', 'Pclass'],
+        "binary_features":['IsAlone'],
     },
     "model": {
-        "cv_folds": 4,
+        "cv_folds": 2,
         "positive_label": 1,
         "negative_label": 0,
         "task_type": "CPU", # Или "GPU", если доступно
         "active_models": [
             "Logistic Regression",
             "RBF SVM",
-            #"KNN",
-            #"Gaussian Naive Bayes",
-            #"Decision Tree",
-            #"Random Forest",
-            "CatBoost"
+            "KNN",
+            "Gaussian Naive Bayes",
+            "Decision Tree",
+            "Random Forest",
+            "CatBoost",
+            "XGBoost",
+            "LightGBM"
         ],
-        "ensemble":"stacking_lr"
-        #other: ["none", "averaging", "voting", "stacking_lr", "stacking_ridge"]
+        "ensemble":"voting",
+        #other: ["averaging", "voting", "stacking_lr", "stacking_ridge"]
+        "ensemble_models":["LightGBM", "Logistic Regression", "RBF SVM"]
     },
 
     "optuna": {
+        "complex_models":["CatBoost", "Random Forest", "XGBoost", "LightGBM"],
         "n_trials_default": 10,
         "n_trials_complex": 3, # Для CatBoost и Random Forest
     },
@@ -43,8 +49,7 @@ config = {
         "ensemble_submission_file": "subs/submission_ensemble.csv",
 
         "params_file":       "models/best_params.json",
-        "best_model_joblib": "models/best_model.joblib",
-        "ensemble_joblib":   "models/ensemble.joblib",
+        "folder_for_joblib": "models"
     }
 }
 
