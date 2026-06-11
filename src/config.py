@@ -15,7 +15,7 @@ config = {
         "test_path": "data/test.csv",
         "target_column": "Survived",
         "test_size": 0.30,
-        "categorical_features": ["Sex", "Deck", "Pclass"],
+        "categorical_features": ["Sex", "Deck", "Pclass", "Honorific", "Embarked"],
         "binary_features": ["IsAlone"],
     },
     "model": {
@@ -47,6 +47,7 @@ config = {
         "best_model_submission_file": "subs/submission.csv",
         "ensemble_submission_file": "subs/submission_ensemble.csv",
         "params_file": "models/best_params.json",
+        "baseline_results_file": "models/baseline_results.json",
         "folder_for_joblib": "models",
     },
 }

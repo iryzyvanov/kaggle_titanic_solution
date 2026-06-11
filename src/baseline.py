@@ -1,11 +1,17 @@
 """Простой бейзлайн логистической регрессии для Titanic без утечки данных."""
 
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score, StratifiedKFold
+
+from config import config
+from utils import save_json_file
 
 FEATURES = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked"]
 TARGET = "Survived"
@@ -82,6 +88,41 @@ def _save_submission(test_ids: pd.Series, predictions: np.ndarray) -> None:
     print(f"Готово! Файл для отправки сохранен по пути: {output_path}")
 
 
+def _build_result(scores: np.ndarray) -> dict[str, Any]:
+    """Формирует JSON-сериализуемые метрики бейзлайна."""
+    return {
+        "model": "Baseline Logistic Regression",
+        "display_model": "Baseline Logistic Regression (non-equal CV, 5-fold full train)",
+        "cv_accuracy_mean": float(np.mean(scores)),
+        "cv_accuracy_std": float(np.std(scores)),
+        "test_accuracy": None,
+        "test_precision": None,
+        "test_recall": None,
+        "test_f1": None,
+    }
+
+
+def _save_results(scores: np.ndarray) -> None:
+    """Сохраняет результаты бейзлайна в models/*.json."""
+    output_path = Path(config.output.baseline_results_file)
+    data = {
+        "general_params": {
+            "seed": RANDOM_STATE,
+            "cv_folds": 5,
+            "features": FEATURES,
+        },
+        "model_params": {
+            "model": "LogisticRegression",
+            "max_iter": 1000,
+            "random_state": RANDOM_STATE,
+        },
+        "result": _build_result(scores),
+        "submission_file": "subs/baseline_submission.csv",
+    }
+    save_json_file(output_path, data)
+    print(f"Результаты бейзлайна сохранены по пути: {output_path}")
+
+
 def run_baseline() -> None:
     """Обучает и оценивает простой бейзлайн логистической регрессии."""
     print("=" * 60)
@@ -106,6 +147,7 @@ def run_baseline() -> None:
     )
 
     _print_scores(scores)
+    _save_results(scores)
 
     print("\nОбучение финальной модели на всем объеме train...")
     baseline_model.fit(train_x, train_y)

@@ -6,6 +6,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, RobustScaler
+from sklearn.base import BaseEstimator, TransformerMixin
 
 from config import config
 
@@ -23,17 +24,59 @@ REPLACEMENT_HONORIFICS = {
     "Capt": "Mr",
     "Sir": "Mr",
     "Don": "Mr",
+    'Dona': 'Mrs'
 }
 
-AGE_BY_HONORIFIC = {
-    "Mr": 32.739609,
-    "Mrs": 35.981818,
-    "Master": 4.574167,
-    "Miss": 21.860,
-    "Other": 45.888889,
-}
+# AGE_BY_HONORIFIC = {
+#     "Mr": 32.739609,
+#     "Mrs": 35.981818,
+#     "Master": 4.574167,
+#     "Miss": 21.860,
+#     "Other": 45.888889,
+# }
 
-FEATURES_TO_DROP = ["PassengerId", "Name", "Ticket", "Cabin", "Embarked"]
+class GroupAgeImputer(BaseEstimator, TransformerMixin):
+    """
+    Заполняет Age медианой по Honorific.
+
+    Медианы рассчитываются во время fit(), поэтому при использовании
+    внутри Pipeline они вычисляются только на обучающей части CV-фолда.
+    """
+    def fit(self, X: pd.DataFrame, y=None):
+        required_columns = {"Age", "Honorific"}
+        missing = required_columns.difference(X.columns)
+
+        if missing:
+            raise ValueError(
+                f"Отсутствуют необходимые колонки: {sorted(missing)}"
+            )
+
+        self.medians_ = (
+            X.groupby("Honorific")["Age"]
+            .median()
+            .to_dict()
+        )
+        self.global_median_ = X["Age"].median()
+
+        if pd.isna(self.global_median_):
+            raise ValueError("Невозможно рассчитать общую медиану Age.")
+
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        X_out = X.copy()
+
+        ages_by_group = X_out["Honorific"].map(self.medians_)
+
+        X_out["Age"] = (
+            X_out["Age"]
+            .fillna(ages_by_group)
+            .fillna(self.global_median_)
+        )
+
+        return X_out
+
+FEATURES_TO_DROP = ["PassengerId", "Name", "Ticket", "Cabin", "SibSp", "Parch"]
 RARE_DECKS = ["T", "G", "F", "A"]
 
 
@@ -55,8 +98,13 @@ def fill_age_by_honorifics(df: pd.DataFrame) -> pd.DataFrame:
         missing_age = df["Age"].isna() & (df["Honorific"] == honorific)
         df.loc[missing_age, "Age"] = age
 
-    return df.drop(columns="Honorific")
+    return df#.drop(columns="Honorific")
 
+def fill_embarked(df: pd.DataFrame) -> pd.DataFrame:
+    """Заполняет пропуски в порту посадки самой частой категорией."""
+    if 'Embarked' in df.columns:
+        df['Embarked'] = df['Embarked'].fillna('S')
+    return df
 
 def create_family_size(df: pd.DataFrame) -> pd.DataFrame:
     """Создает общий размер семьи из SibSp и Parch."""
@@ -95,7 +143,7 @@ def preprocessing_data(df: pd.DataFrame) -> pd.DataFrame:
     preprocessing_steps = (
         extract_and_set_honorifics,
         normalize_honorifics,
-        fill_age_by_honorifics,
+        #fill_age_by_honorifics,
         create_family_size,
         create_is_alone,
         create_fare_log,
@@ -105,7 +153,7 @@ def preprocessing_data(df: pd.DataFrame) -> pd.DataFrame:
 
     for step in preprocessing_steps:
         df_processed = step(df_processed)
-
+    print(df_processed.columns)
     return df_processed
 
 
@@ -114,26 +162,30 @@ def get_preprocessor() -> ColumnTransformer:
     categorical_features = list(config.data.categorical_features)
     binary_features = list(config.data.binary_features)
 
-    numeric_transformer = Pipeline(
-        steps=[
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", RobustScaler()),
-        ]
-    )
-    preprocessor = ColumnTransformer(
-        transformers=[
-            (
-                "cat",
-                OneHotEncoder(
+    categorical_transformer = Pipeline(
+        steps=[("imputer",
+                SimpleImputer(strategy="most_frequent")),
+            ("encoder", OneHotEncoder(
                     drop="first",
                     handle_unknown="ignore",
-                    sparse_output=False,
-                ),
+                    sparse_output=False))] )
+    
+    numeric_transformer = Pipeline(steps=[
+            ('imputer', SimpleImputer(strategy='median')), 
+            ('scaler', RobustScaler())
+        ])
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("cat",
+                categorical_transformer,
                 categorical_features,
             ),
-            ("bin", "passthrough", binary_features),
+            ("bin",
+                "passthrough",
+                binary_features,),
         ],
         remainder=numeric_transformer,
+        verbose_feature_names_out=False,
     )
     preprocessor.set_output(transform="pandas")
     return preprocessor

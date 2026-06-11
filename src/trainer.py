@@ -14,7 +14,7 @@ from sklearn.pipeline import Pipeline
 
 from config import config
 from model_builder import build_model_by_trial
-from preprocessing import get_preprocessor
+from preprocessing import get_preprocessor,GroupAgeImputer
 from utils import configure_optuna_logging
 
 optuna = configure_optuna_logging()
@@ -31,6 +31,7 @@ def _create_pipeline(estimator: BaseEstimator) -> Pipeline:
     """Оборачивает классификатор общим трансформером предобработки."""
     return Pipeline(
         [
+            ("age_imputer", GroupAgeImputer()),
             ("preprocessor", get_preprocessor()),
             ("classifier", estimator),
         ]
