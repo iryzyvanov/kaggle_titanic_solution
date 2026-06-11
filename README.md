@@ -20,12 +20,17 @@ kaggle_titanic_solution/
 │   ├── EDA.ipynb
 │   └── preprocess.ipynb
 ├── src/
+│   ├── baseline.py
 │   ├── config.py
 │   ├── main.py
-│   ├── model.py
+│   ├── model_builder.py
 │   ├── preprocessing.py
 │   ├── train.py
+│   ├── trainer.py
 │   └── utils.py
+├── tests/
+│   ├── test_model_builder.py
+│   └── test_preprocessing.py
 └── README.md
 ```
 
@@ -47,6 +52,12 @@ kaggle_titanic_solution/
 ```bash
 python src/main.py
 ```
+
+Режим запуска задается в `src/config.py`:
+
+- `TUNE` — подбор гиперпараметров через Optuna и обучение;
+- `TRAIN` — быстрое обучение по сохраненным параметрам, если они есть;
+- `PREDICT` — инференс по сохраненным моделям.
 
 После запуска скрипт:
 

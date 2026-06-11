@@ -1,123 +1,139 @@
-# 👉 здесь вся логика подготовки данных
+"""Инженерия признаков и вспомогательная предобработка для Titanic."""
 
-# 💡 Что внутри:
-# очистка данных
-# создание новых признаков
-# кодирование категорий
-
+import numpy as np
+import pandas as pd
 from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, RobustScaler
 
-import pandas as pd
-import numpy as np
 from config import config
 
 REPLACEMENT_HONORIFICS = {
-    'Mlle': 'Miss',
-    'Mme': 'Miss',
-    'Ms': 'Miss',
-    'Dr': 'Mr',
-    'Major': 'Mr',
-    'Lady': 'Mrs',
-    'Countess': 'Mrs',
-    'Jonkheer': 'Other',
-    'Col': 'Other',
-    'Rev': 'Other',
-    'Capt': 'Mr',
-    'Sir': 'Mr',
-    'Don': 'Mr'
-}
-def normalize_honorifics(df):
-    df['Honorific'] = df['Honorific'].replace(REPLACEMENT_HONORIFICS)
-
-AGE_BY_INITIAL_DOUBLE = {
-    'Mr'    : 32.739609,
-    'Mrs'   : 35.981818,
-    'Master': 4.574167,
-    'Miss'  : 21.860,
-    'Other' : 45.888889
+    "Mlle": "Miss",
+    "Mme": "Miss",
+    "Ms": "Miss",
+    "Dr": "Mr",
+    "Major": "Mr",
+    "Lady": "Mrs",
+    "Countess": "Mrs",
+    "Jonkheer": "Other",
+    "Col": "Other",
+    "Rev": "Other",
+    "Capt": "Mr",
+    "Sir": "Mr",
+    "Don": "Mr",
 }
 
-FEATURES_TO_DROP = ['PassengerId','Name','Ticket','Cabin','Embarked']
+AGE_BY_HONORIFIC = {
+    "Mr": 32.739609,
+    "Mrs": 35.981818,
+    "Master": 4.574167,
+    "Miss": 21.860,
+    "Other": 45.888889,
+}
 
-def extract_and_set_honorifics(df):
-    df['Honorific'] = df.Name.str.extract(r'([A-Za-z]+)\.')
-
-
-def fill_age_by_honorifics(df):
-
-    for honorific in AGE_BY_INITIAL_DOUBLE:
-        mask = (df.Age.isnull()
-            & (df.Honorific == honorific))
-
-        df.loc[mask, 'Age'] = (AGE_BY_INITIAL_DOUBLE[honorific])
-
-    df.drop('Honorific', axis=1, inplace=True)
-
-def create_FamilySize(df):
-    df['FamilySize'] = df['SibSp'] + df['Parch'] + 1
-
-def create_IsAlone(df):
-    df["IsAlone"] = (
-        df["FamilySize"] == 1).astype(int)
-
-def create_FareLog(df):
-    df['FareLog'] = np.log1p(df['Fare'])
-
-def drop_features(df):
-    df.drop(FEATURES_TO_DROP,axis=1,inplace=True)
+FEATURES_TO_DROP = ["PassengerId", "Name", "Ticket", "Cabin", "Embarked"]
+RARE_DECKS = ["T", "G", "F", "A"]
 
 
-def preprocess_Deck(df):
-    df['Deck'] = df['Cabin'].fillna('U').str[0]
-    df['Deck'] = df['Deck'].replace(['T', 'G', 'F', 'A'], 'Rare')
+def extract_and_set_honorifics(df: pd.DataFrame) -> pd.DataFrame:
+    """Извлекает обращения пассажиров из имен в столбец ``Honorific``."""
+    df["Honorific"] = df["Name"].str.extract(r"([A-Za-z]+)\.")
+    return df
 
-def preprocessing_data(df):
-    df_copy =  df.copy()
-    
-    # ========= FEATURE ENGINEERING =========
 
-    extract_and_set_honorifics(df_copy)
+def normalize_honorifics(df: pd.DataFrame) -> pd.DataFrame:
+    """Сводит редкие и похожие обращения к компактному набору значений."""
+    df["Honorific"] = df["Honorific"].replace(REPLACEMENT_HONORIFICS)
+    return df
 
-    normalize_honorifics(df_copy)
 
-    fill_age_by_honorifics(df_copy)
+def fill_age_by_honorifics(df: pd.DataFrame) -> pd.DataFrame:
+    """Заполняет пропуски возраста медианой для соответствующего обращения."""
+    for honorific, age in AGE_BY_HONORIFIC.items():
+        missing_age = df["Age"].isna() & (df["Honorific"] == honorific)
+        df.loc[missing_age, "Age"] = age
 
-    create_FamilySize(df_copy)
+    return df.drop(columns="Honorific")
 
-    create_IsAlone(df_copy)
 
-    create_FareLog(df_copy)
+def create_family_size(df: pd.DataFrame) -> pd.DataFrame:
+    """Создает общий размер семьи из SibSp и Parch."""
+    df["FamilySize"] = df["SibSp"] + df["Parch"] + 1
+    return df
 
-    preprocess_Deck(df_copy)
 
-    drop_features(df_copy)
+def create_is_alone(df: pd.DataFrame) -> pd.DataFrame:
+    """Создает бинарный признак пассажиров, путешествующих без семьи."""
+    df["IsAlone"] = (df["FamilySize"] == 1).astype(int)
+    return df
 
-    return df_copy
 
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
+def create_fare_log(df: pd.DataFrame) -> pd.DataFrame:
+    """Создает логарифмированный признак Fare с корректной обработкой нулей."""
+    df["FareLog"] = np.log1p(df["Fare"])
+    return df
 
-def get_preprocessor():
-    """Создает трансформер: OHE для категорий, пропускаем бинарные, RobustScaler для всего остального."""
+
+def preprocess_deck(df: pd.DataFrame) -> pd.DataFrame:
+    """Извлекает палубу из Cabin и группирует редкие значения как ``Rare``."""
+    df["Deck"] = df["Cabin"].fillna("U").str[0]
+    df["Deck"] = df["Deck"].replace(RARE_DECKS, "Rare")
+    return df
+
+
+def drop_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Удаляет столбцы, которые больше не нужны после инженерии признаков."""
+    return df.drop(columns=FEATURES_TO_DROP)
+
+
+def preprocessing_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Возвращает признаки Titanic без изменения входного DataFrame."""
+    df_processed = df.copy()
+
+    preprocessing_steps = (
+        extract_and_set_honorifics,
+        normalize_honorifics,
+        fill_age_by_honorifics,
+        create_family_size,
+        create_is_alone,
+        create_fare_log,
+        preprocess_deck,
+        drop_features,
+    )
+
+    for step in preprocessing_steps:
+        df_processed = step(df_processed)
+
+    return df_processed
+
+
+def get_preprocessor() -> ColumnTransformer:
+    """Создает sklearn-трансформер для использования внутри конвейера модели."""
     categorical_features = list(config.data.categorical_features)
-    binary_features      = list(config.data.binary_features)
+    binary_features = list(config.data.binary_features)
 
-    # Создаем конвейер для числовых фичей: честное заполнение пропусков -> масштабирование
-    numeric_transformer = Pipeline(steps=[
-        ('imputer', SimpleImputer(strategy='median')),
-        ('scaler', RobustScaler())
-    ])
-    preprocessor = ColumnTransformer(transformers=
-            [('cat', OneHotEncoder(
-                    drop='first',             # Избегаем ловушки фиктивных переменных
-                    handle_unknown='ignore',  # Если в test попадется новая палуба — ставим нули
-                    sparse_output=False),     # Возвращаем обычный массив (нужно для деревьев)
-                categorical_features ),
-                ('bin', 'passthrough', binary_features )
-            ],
-        # К остальным (числовым) колонкам применяем масштабирование
-        remainder=numeric_transformer)
-    # Заставляем трансформер возвращать DataFrame
+    numeric_transformer = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", RobustScaler()),
+        ]
+    )
+    preprocessor = ColumnTransformer(
+        transformers=[
+            (
+                "cat",
+                OneHotEncoder(
+                    drop="first",
+                    handle_unknown="ignore",
+                    sparse_output=False,
+                ),
+                categorical_features,
+            ),
+            ("bin", "passthrough", binary_features),
+        ],
+        remainder=numeric_transformer,
+    )
     preprocessor.set_output(transform="pandas")
     return preprocessor
