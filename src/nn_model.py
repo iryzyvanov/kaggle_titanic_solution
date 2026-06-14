@@ -33,7 +33,7 @@ class PyTorchTitanicClassifier(BaseEstimator, ClassifierMixin):
     Scikit-Learn совместимая обёртка для PyTorch модели.
     Позволяет использовать нейросеть внутри Pipeline и Optuna.
     """
-    def __init__(self, epochs=100, lr=0.01, batch_size=32):
+    def __init__(self, epochs=100, lr=0.01, batch_size=32, random_state = config.general.seed):
         self.epochs = epochs
         self.lr = lr
         self.batch_size = batch_size

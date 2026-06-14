@@ -177,7 +177,7 @@ MODEL_BUILDERS: dict[str, ModelBuilder] = {
     "KNN": _build_knn,
     "Decision Tree": _build_decision_tree,
     "Gaussian Naive Bayes": _build_gaussian_naive_bayes,
-    "PyTorch NN": (PyTorchTitanicClassifier, "torch", _build_pytorch_nn)
+    
     
 }
 
@@ -185,6 +185,7 @@ OPTIONAL_MODEL_BUILDERS: dict[str, tuple[Any, str, ModelBuilder]] = {
     "CatBoost": (CatBoostClassifier, "catboost", _build_catboost),
     "XGBoost": (XGBClassifier, "xgboost", _build_xgboost),
     "LightGBM": (LGBMClassifier, "lightgbm", _build_lightgbm),
+    "PyTorch NN": (PyTorchTitanicClassifier, "torch", _build_pytorch_nn)
     
 }
 
