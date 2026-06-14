@@ -5,7 +5,7 @@ from omegaconf import OmegaConf
 
 config = {
     "general": {
-        "seed": 14159265359,
+        "seed": 1415926536,
         # Режимы: "TUNE" - подбор параметров, "TRAIN" - обучение по JSON,
         # "PREDICT" - инференс по сохраненным моделям.
         "mode": "TUNE",
@@ -19,7 +19,7 @@ config = {
         "binary_features": ["IsAlone"],
     },
     "model": {
-        "cv_folds": 2,
+        "cv_folds": 5,
         "positive_label": 1,
         "negative_label": 0,
         "task_type": "CPU",
@@ -36,12 +36,12 @@ config = {
             "PyTorch NN"
         ],
         "ensemble": "voting",
-        "ensemble_models": ["LightGBM", "Logistic Regression", "RBF SVM"],
+        "ensemble_models": ["CatBoost", "Logistic Regression", "KNN"],
     },
     "optuna": {
         "complex_models": ["CatBoost", "Random Forest", "XGBoost", "LightGBM"],
-        "n_trials_default": 10,
-        "n_trials_complex": 3,
+        "n_trials_default": 100,
+        "n_trials_complex": 300,
     },
     "output": {
         "log_file": "log_final_Table.md",

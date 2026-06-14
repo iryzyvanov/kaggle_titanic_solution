@@ -93,9 +93,13 @@ def optimize_model(
             cv_folds=cv_folds,
             random_state=random_state,
         )
+        cv_mean = np.mean(scores)
+        cv_std  = np.std(scores)
 
-        trial.set_user_attr("cv_std", np.std(scores))
-        return float(np.mean(scores))
+        trial.set_user_attr("cv_std", cv_std)
+        # Штрафуем модель за высокий разброс на фолдах
+        # Коэффициент 0.5 в будущем нужно вынести в конфиг
+        return float(cv_mean - (0.5 * cv_std))
 
     sampler = optuna.samplers.TPESampler(seed=random_state)
     study = optuna.create_study(direction="maximize", sampler=sampler)
