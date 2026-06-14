@@ -59,55 +59,6 @@ def configure_optuna_logging() -> Any:
     return optuna
 
 
-def reduce_mem_usage(df: pd.DataFrame, verbose: bool = False) -> pd.DataFrame:
-    """Понижает типы числовых столбцов, чтобы уменьшить расход памяти."""
-    start_mem = df.memory_usage().sum() / 1024**2
-
-    for column in df.columns:
-        column_type = df[column].dtype
-        if (
-            column_type == object
-            or column_type.name == "category"
-            or column_type == "bool"
-        ):
-            continue
-
-        column_min = df[column].min()
-        column_max = df[column].max()
-
-        if str(column_type).startswith("int"):
-            if (
-                column_min > np.iinfo(np.int8).min
-                and column_max < np.iinfo(np.int8).max
-            ):
-                df[column] = df[column].astype(np.int8)
-            elif (
-                column_min > np.iinfo(np.int16).min
-                and column_max < np.iinfo(np.int16).max
-            ):
-                df[column] = df[column].astype(np.int16)
-            elif (
-                column_min > np.iinfo(np.int32).min
-                and column_max < np.iinfo(np.int32).max
-            ):
-                df[column] = df[column].astype(np.int32)
-        elif (
-            column_min > np.finfo(np.float16).min
-            and column_max < np.finfo(np.float16).max
-        ):
-            df[column] = df[column].astype(np.float16)
-        elif (
-            column_min > np.finfo(np.float32).min
-            and column_max < np.finfo(np.float32).max
-        ):
-            df[column] = df[column].astype(np.float32)
-
-    end_mem = df.memory_usage().sum() / 1024**2
-    if verbose:
-        print(f"Исходный размер памяти: {start_mem:.4f} MB")
-        print(f"Размер памяти после оптимизации: {end_mem:.4f} MB")
-
-    return df
 
 
 def _get_catboost_task_type() -> str:

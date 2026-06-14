@@ -28,7 +28,24 @@ try:
 except ImportError:
     LGBMClassifier = None
 
+try:
+    import torch
+    from nn_model import PyTorchTitanicClassifier
+except ImportError:
+    PyTorchTitanicClassifier = None
+
 ModelBuilder = Callable[[Any, int], BaseEstimator]
+
+
+
+def _build_pytorch_nn(trial: Any, random_state: int) -> BaseEstimator:
+    # Заставляем Optuna искать лучшие параметры для нейросети
+    return PyTorchTitanicClassifier(
+        epochs=trial.suggest_int("epochs", 50, 200),
+        lr=trial.suggest_float("lr", 1e-4, 1e-1, log=True),
+        batch_size=trial.suggest_categorical("batch_size", [16, 32, 64]),
+        random_state=random_state
+    )
 
 
 def _build_logistic_regression(trial: Any, random_state: int) -> BaseEstimator:
@@ -160,12 +177,15 @@ MODEL_BUILDERS: dict[str, ModelBuilder] = {
     "KNN": _build_knn,
     "Decision Tree": _build_decision_tree,
     "Gaussian Naive Bayes": _build_gaussian_naive_bayes,
+    "PyTorch NN": (PyTorchTitanicClassifier, "torch", _build_pytorch_nn)
+    
 }
 
 OPTIONAL_MODEL_BUILDERS: dict[str, tuple[Any, str, ModelBuilder]] = {
     "CatBoost": (CatBoostClassifier, "catboost", _build_catboost),
     "XGBoost": (XGBClassifier, "xgboost", _build_xgboost),
     "LightGBM": (LGBMClassifier, "lightgbm", _build_lightgbm),
+    
 }
 
 

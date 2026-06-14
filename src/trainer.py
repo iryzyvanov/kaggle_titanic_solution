@@ -14,7 +14,7 @@ from sklearn.pipeline import Pipeline
 
 from config import config
 from model_builder import build_model_by_trial
-from preprocessing import get_preprocessor,GroupAgeImputer
+from preprocessing import GroupAgeImputer, TitanicFeatureEngineer, get_preprocessor
 from utils import configure_optuna_logging
 
 optuna = configure_optuna_logging()
@@ -28,9 +28,10 @@ def _take_rows(data: Any, indices: np.ndarray) -> Any:
 
 
 def _create_pipeline(estimator: BaseEstimator) -> Pipeline:
-    """Оборачивает классификатор общим трансформером предобработки."""
+    """Оборачивает классификатор feature engineering и общим предобработчиком."""
     return Pipeline(
         [
+            ("feature_engineering", TitanicFeatureEngineer()),
             ("age_imputer", GroupAgeImputer()),
             ("preprocessor", get_preprocessor()),
             ("classifier", estimator),
@@ -38,8 +39,8 @@ def _create_pipeline(estimator: BaseEstimator) -> Pipeline:
     )
 
 
-def _cross_validate_pipeline(
-    pipeline: Pipeline,
+def cross_validate_estimator(
+    estimator: BaseEstimator,
     x: pd.DataFrame,
     y: pd.Series,
     cv_folds: int,
@@ -59,7 +60,7 @@ def _cross_validate_pipeline(
         y_train_fold = _take_rows(y, train_idx)
         y_valid_fold = _take_rows(y, valid_idx)
 
-        fold_model = clone(pipeline)
+        fold_model = clone(estimator)
         fold_model.fit(x_train_fold, y_train_fold)
 
         valid_pred = fold_model.predict(x_valid_fold)
@@ -85,8 +86,8 @@ def optimize_model(
             random_state=random_state,
         )
         pipeline = _create_pipeline(model)
-        scores = _cross_validate_pipeline(
-            pipeline=pipeline,
+        scores = cross_validate_estimator(
+            estimator=pipeline,
             x=x,
             y=y,
             cv_folds=cv_folds,
@@ -138,6 +139,18 @@ def fit_evaluate_model(
     }
 
     return result, final_pipeline
+
+
+def refit_models_on_full_data(
+    trained_models: dict[str, Pipeline],
+    full_x: pd.DataFrame,
+    full_y: pd.Series,
+) -> dict[str, Pipeline]:
+    """Переобучает все модели на полном train.csv перед сохранением."""
+    return {
+        name: clone(model).fit(full_x, full_y)
+        for name, model in trained_models.items()
+    }
 
 
 def _saved_cv_metrics(
@@ -210,7 +223,7 @@ def run_experiments(
     trained_models = {}
 
     existing_params = saved_data.get("params", {}) if saved_data else {}
-    saved_results = saved_data.get("results", []) if saved_data else {}
+    saved_results = saved_data.get("results", []) if saved_data else []
     best_params_dict = dict(existing_params)
 
     for model_name in config.model.active_models:

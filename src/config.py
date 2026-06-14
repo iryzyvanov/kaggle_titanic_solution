@@ -33,6 +33,7 @@ config = {
             "CatBoost",
             "XGBoost",
             "LightGBM",
+            "PyTorch NN"
         ],
         "ensemble": "voting",
         "ensemble_models": ["LightGBM", "Logistic Regression", "RBF SVM"],

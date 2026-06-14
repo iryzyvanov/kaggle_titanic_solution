@@ -1,0 +1,14 @@
+data/*
+subs/*
+models/*
+__pycache__/*
+
+KaggleTemplate.md
+src/__pycache__/*
+catboost_info/*
+
+
+LG.md
+
+tests/*
+src/legacy.py
