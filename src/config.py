@@ -5,7 +5,7 @@ from omegaconf import OmegaConf
 
 config = {
     "general": {
-        "seed": 42,
+        "seed": 14159265359,
         # Режимы: "TUNE" - подбор параметров, "TRAIN" - обучение по JSON,
         # "PREDICT" - инференс по сохраненным моделям.
         "mode": "TUNE",
