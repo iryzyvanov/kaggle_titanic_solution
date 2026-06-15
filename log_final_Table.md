@@ -1,30 +1,4 @@
-
-================================================================================
-### MODEL COMPARISON (17:04 31-05-2026)
-================================================================================
-
-**Run Configuration:**
-- **Seed:** `42`
-- **CV Folds:** `4`
-- **Ensemble Type:** `averaging`
-- **Optuna Trials (Default):** `150`
-- **Optuna Trials (Complex):** `300`
-
-| Model | CV Accuracy Mean | CV Accuracy Std | Test Accuracy | Test Precision | Test Recall | Test F1 | Submit Accuracy |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |:---: |
-| **CatBoost** | 0.8427 | 0.0173 | 0.8134 | 0.8118 | 0.6699 | 0.7340 |  0.7751  |
-| RBF SVM | 0.8282 | 0.0256 | 0.7799 | 0.7292 | 0.6796 | 0.7035 |          |
-| Logistic Regression | 0.8042 | 0.0420 | 0.8134 | 0.7524 | 0.7670 | 0.7596 |          |
-
-----------------------------------------
-### ensemble_averaging kaggle submit acc.: 0.77272
-----------------------------------------
-----------------------------------------
-### ensemble_voting kaggle submit acc.: 0.77272
-----------------------------------------
-----------------------------------------
-### ensemble_voting kaggle submit acc.: 0.77272
-----------------------------------------
+### baseline  kaggle submit Accuracy: 0.76794
 
 
 ================================================================================
@@ -53,11 +27,9 @@
 | 11 | Gaussian Naive Bayes | 0.8027 | -0.0591 | 0.0029 | 0.7687 | 0.6814 | 0.7476 | 0.7130 |
 | 12 | Baseline Logistic Regression (non-equal CV, 5-fold full train) | 0.7924 | -0.0694 | 0.0174 |          |          |          |          |
 
-----------------------------------------
-### BEST MODEL
-**XGBoost**
-----------------------------------------
+### ensemble_voting(XGBoost, RBF SVM, Logistic Regression) kaggle submit Accuracy: 0.77272
 
+### XGBoost kaggle submit Accuracy: 0.75598
 
 ================================================================================
 ### MODEL COMPARISON (19:23 14-06-2026)
@@ -85,10 +57,9 @@
 | 11 | Gaussian Naive Bayes | 0.7999 | -0.0585 | 0.0118 | 0.7687 | 0.6847 | 0.7379 | 0.7103 |
 | 12 | Baseline Logistic Regression (non-equal CV, 5-fold full train) | 0.7924 | -0.0660 | 0.0174 |          |          |          |          |
 
-----------------------------------------
-### BEST MODEL
-**CatBoost**
-----------------------------------------
+### ensemble_voting (CatBoost, RBF SVM, Logistic Regression) kaggle submit Accuracy: 0.77511
+
+### CatBoost kaggle submit Accuracy: 0.76794
 
 
 ================================================================================
@@ -117,8 +88,6 @@
 | 11 | Gaussian Naive Bayes | 0.7927 | -0.0697 | 0.0196 | 0.7687 | 0.6847 | 0.7379 | 0.7103 |
 | 12 | Baseline Logistic Regression (non-equal CV, 5-fold full train) | 0.7924 | -0.0701 | 0.0174 |          |          |          |          |
 
-----------------------------------------
-### BEST MODEL
-**XGBoost**
-----------------------------------------
+### ensemble_voting ("XGBoost", "Logistic Regression", "RBF SVM") kaggle submit Accuracy: 0.77033
 
+### ensemble_voting ("CatBoost", "Logistic Regression", "KNN") kaggle submit Accuracy: 0.77751

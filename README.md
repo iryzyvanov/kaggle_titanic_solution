@@ -27,10 +27,8 @@ kaggle_titanic_solution/
 │   ├── preprocessing.py
 │   ├── train.py
 │   ├── trainer.py
+│   ├── nn_model.py
 │   └── utils.py
-├── tests/
-│   ├── test_model_builder.py
-│   └── test_preprocessing.py
 └── README.md
 ```
 
@@ -82,23 +80,54 @@ log_final_Table.md
 Там сохраняются метрики моделей и конфигурация запуска.
 
 ## Предобработка признаков
+Основная логика находится в `preprocessing.py`.
 
-Логика предобработки находится в `src/preprocessing.py`.
+`TitanicFeatureEngineer` создает признаки:
 
-Что делается:
+| Признак | Описание |
+| :--- | :--- |
+| `Honorific` | Обращение из имени пассажира: `Mr`, `Mrs`, `Miss`, `Master`, `Other` и т.д. |
+| `FamilySize` | Размер семьи: `SibSp + Parch + 1`. |
+| `IsAlone` | Бинарный признак одиночного путешествия. |
+| `FareLog` | Логарифмированный тариф `log1p(Fare)`. |
+| `Deck` | Первая буква `Cabin`; пропуски заменяются на `U`, редкие палубы группируются в `Rare`. |
 
-- извлечение обращения из имени пассажира (`Honorific`);
-- нормализация редких обращений;
-- заполнение пропусков в возрасте по обращению;
-- создание признака `FamilySize`;
-- создание бинарного признака `IsAlone`;
-- логарифмирование `Fare` через `FareLog`;
-- извлечение палубы `Deck` из `Cabin`;
-- удаление лишних столбцов.
+После генерации признаков удаляются:
+
+```python
+["PassengerId", "Name", "Ticket", "Cabin", "SibSp", "Parch", "Fare"]
+```
+
+Отдельный трансформер `GroupAgeImputer` заполняет `Age` медианой по `Honorific`, а если группы нет — общей медианой train-части.
+
+## Предобработка для моделей
+
+`get_preprocessor()` собирает `ColumnTransformer`:
+
+- категориальные признаки:
+  - `Sex`
+  - `Deck`
+  - `Pclass`
+  - `Honorific`
+  - `Embarked`
+- бинарные признаки:
+  - `IsAlone`
+- остальные числовые признаки:
+  - заполнение медианой;
+  - масштабирование через `RobustScaler`.
+
+Категориальные признаки проходят:
+
+```text
+SimpleImputer(strategy="most_frequent")
+OneHotEncoder(drop="first", handle_unknown="ignore")
+```
 
 ## Модели
 
-В проекте используются несколько классических моделей машинного обучения:
+Фабрики моделей находятся в `model_builder.py`.
+
+Поддерживаемые модели:
 
 - Logistic Regression
 - RBF SVM
@@ -106,23 +135,38 @@ log_final_Table.md
 - Gaussian Naive Bayes
 - Decision Tree
 - Random Forest
-- CatBoost *(если установлен)*
+- CatBoost
+- XGBoost
+- LightGBM
+- PyTorch NN
 
-Подбор параметров реализован через Optuna, а список активных моделей задается в `src/config.py`.
+Список реально запускаемых моделей задается в `config.py`:
+
+```python
+config.model.active_models
+```
 
 ## Ансамбли
 
-Поддерживаются разные варианты ансамблирования:
-
-- `averaging` — soft voting / усреднение вероятностей;
-- `voting` — hard voting;
-- `stacking_lr` — stacking с Logistic Regression;
-- `stacking_ridge` — stacking с Ridge Classifier.
-
-Тип ансамбля задается в конфиге:
+Тип ансамбля задается в `config.py`:
 
 ```python
-config.model.ensemble
+config.model.ensemble = "voting"
+```
+
+Поддерживаются:
+
+| Значение | Описание |
+| :--- | :--- |
+| `averaging` | Soft Voting: усреднение вероятностей. |
+| `voting` | Hard Voting: голосование классов. |
+| `stacking_lr` | Stacking с `LogisticRegression` как мета-моделью. |
+| `stacking_ridge` | Stacking с `RidgeClassifier` как мета-моделью. |
+
+Список моделей для ансамбля задается так:
+
+```python
+config.model.ensemble_models = ["CatBoost", "Logistic Regression", "KNN"]
 ```
 
 ## Конфигурация
@@ -137,32 +181,57 @@ config.model.ensemble
 - число trials для Optuna;
 - имена выходных файлов.
 
-## Примечания
+## Логи и артефакты
 
-- CatBoost используется только если библиотека установлена.
-- Для ускорения и экономии памяти применяется `reduce_mem_usage`.
-- Код ориентирован на табличный классификационный пайплайн для Titanic, но отдельные части можно переиспользовать и в других задачах.
+| Файл | Что хранит |
+| :--- | :--- |
+| `log_final_Table.md` | Markdown-таблицы сравнений моделей по запускам. |
+| `models/best_params.json` | Лучшие параметры Optuna и результаты моделей. |
+| `models/baseline_results.json` | Метрики отдельного бейзлайна. |
+| `models/*.joblib` | Сохраненные обученные pipeline-модели. |
+| `models/ensemble_<type>.joblib` | Сохраненный ансамбль. |
+| `subs/baseline_submission.csv` | Submission от бейзлайна. |
+| `subs/submission.csv` | Submission от лучшей одиночной модели. |
+| `subs/submission_ensemble.csv` | Submission от ансамбля. |
 
----
 
 ## Результаты моделей
 
-| Модель              |         CV Accuracy | Test Accuracy |  Precision |     Recall |         F1 | Kaggle Score |
-| ------------------- | ------------------: | ------------: | ---------: | ---------: | ---------: | -----------: |
-| **CatBoost**        | **0.8427 ± 0.0173** |    **0.8134** | **0.8118** | **0.6699** | **0.7340** |  **0.77511** |
-| Logistic Regression |     0.8042 ± 0.0420 |        0.8134 |     0.7524 |     0.7670 |     0.7596 |            - |
-| RBF SVM             |     0.8282 ± 0.0256 |        0.7799 |     0.7292 |     0.6796 |     0.7035 |            - |
+Финальное сравнение моделей по последнему запуску эксперимента:
 
----
+- **Seed:** `1415926536`
+- **CV Folds:** `5`
+- **Ensemble Type:** `voting`
+- **Optuna Trials Default:** `100`
+- **Optuna Trials Complex:** `300`
 
-## Результаты ансамблей
+| Rank | Model | CV Accuracy | Test Accuracy | Precision | Recall | F1 |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: |
+| 1 | **XGBoost** | **0.8625 ± 0.0086** | 0.7948 | 0.7727 | 0.6602 | 0.7120 |
+| 2 | Ensemble (voting) | 0.8555 ± 0.0147 | 0.8022 | 0.7717 | 0.6893 | 0.7282 |
+| 3 | LightGBM | 0.8512 ± 0.0119 | 0.7985 | 0.7952 | 0.6408 | 0.7097 |
+| 4 | CatBoost | 0.8469 ± 0.0140 | 0.8097 | 0.8095 | 0.6602 | 0.7273 |
+| 5 | Random Forest | 0.8417 ± 0.0148 | **0.8246** | **0.8415** | 0.6699 | **0.7460** |
+| 6 | RBF SVM | 0.8403 ± 0.0143 | 0.8022 | 0.7778 | 0.6796 | 0.7254 |
+| 7 | Logistic Regression | 0.8377 ± 0.0165 | 0.7948 | 0.7353 | 0.7282 | 0.7317 |
+| 8 | KNN | 0.8357 ± 0.0075 | 0.7836 | 0.7778 | 0.6117 | 0.6848 |
+| 9 | PyTorch NN | 0.8357 ± 0.0204 | 0.7799 | 0.7245 | 0.6893 | 0.7065 |
+| 10 | Decision Tree | 0.8225 ± 0.0275 | 0.7761 | 0.7263 | 0.6699 | 0.6970 |
+| 11 | Gaussian Naive Bayes | 0.7927 ± 0.0196 | 0.7687 | 0.6847 | **0.7379** | 0.7103 |
+| 12 | Baseline Logistic Regression | 0.7924 ± 0.0174 | - | - | - | - |
 
-| Ансамбль                       |          Kaggle Score |
-| ------------------------------ | --------------------: |
-| Averaging                      |               0.77272 |
-| Voting                         |               0.77272 |
+## Kaggle Submit Scores
 
----
+| Submission | Kaggle Accuracy |
+| :--- | :---: |
+| **Ensemble voting CV=5 CatBoost + Logistic Regression + KNN** | **0.77751** |
+| Ensemble voting CV=4 (CatBoost, RBF SVM, Logistic Regression)| 0.77511 |
+| Ensemble voting CV=2 (XGBoost, RBF SVM, Logistic Regression)| 0.77272 |
+| XGBoost  CV=5 | 0.77272 |
+| Ensemble voting CV=5 ("XGBoost", "Logistic Regression", "RBF SVM") | 0.77033 |
+| Baseline Logistic Regression | 0.76794 |
+| CatBoost CV=4 | 0.76794 |
+| XGBoost  CV=2 | 0.75598 |
 
 ## Автор
 
