@@ -1,0 +1,186 @@
+{
+    "general_params": {
+        "cv_folds": 5
+    },
+    "params": {
+        "Logistic Regression": {
+            "penalty": "l1",
+            "C": 58.412554118440916,
+            "class_weight": null
+        },
+        "RBF SVM": {
+            "gamma_choice": "auto",
+            "C": 9.462308467437657
+        },
+        "KNN": {
+            "n_neighbors": 25,
+            "weights": "uniform",
+            "p": 1
+        },
+        "Gaussian Naive Bayes": {
+            "var_smoothing": 0.00949515160188002
+        },
+        "Decision Tree": {
+            "criterion": "entropy",
+            "max_depth": 9,
+            "min_samples_split": 20,
+            "min_samples_leaf": 9
+        },
+        "Random Forest": {
+            "n_estimators": 113,
+            "criterion": "entropy",
+            "max_depth": 9,
+            "min_samples_split": 9,
+            "min_samples_leaf": 2,
+            "max_features": "log2"
+        },
+        "CatBoost": {
+            "iterations": 924,
+            "learning_rate": 0.005032695330093043,
+            "depth": 4,
+            "l2_leaf_reg": 0.20262813907650992,
+            "subsample": 0.8994105763287392,
+            "min_data_in_leaf": 2
+        },
+        "XGBoost": {
+            "n_estimators": 361,
+            "learning_rate": 0.13667578827958846,
+            "max_depth": 3,
+            "subsample": 0.9625195701615551,
+            "colsample_bytree": 0.5002267126589244,
+            "gamma": 1.786937940983714
+        },
+        "LightGBM": {
+            "max_depth": 3,
+            "n_estimators": 522,
+            "learning_rate": 0.009523401920384894,
+            "num_leaves": 5,
+            "subsample": 0.7220450051307534,
+            "colsample_bytree": 0.975251256581603,
+            "min_child_samples": 3
+        },
+        "PyTorch NN": {
+            "epochs": 75,
+            "lr": 0.0014410483265854675,
+            "batch_size": 16
+        }
+    },
+    "results": [
+        {
+            "model": "XGBoost",
+            "cv_accuracy_mean": 0.86246,
+            "cv_accuracy_std": 0.00857,
+            "test_accuracy": 0.79478,
+            "test_precision": 0.77273,
+            "test_recall": 0.66019,
+            "test_f1": 0.71204
+        },
+        {
+            "model": "Ensemble (voting)",
+            "cv_accuracy_mean": 0.8555225806451613,
+            "cv_accuracy_std": 0.009049531869392509,
+            "test_accuracy": 0.8097014925373134,
+            "test_precision": 0.7888888888888889,
+            "test_recall": 0.6893203883495146,
+            "test_f1": 0.7357512953367875
+        },
+        {
+            "model": "LightGBM",
+            "cv_accuracy_mean": 0.85118,
+            "cv_accuracy_std": 0.0119,
+            "test_accuracy": 0.79851,
+            "test_precision": 0.79518,
+            "test_recall": 0.64078,
+            "test_f1": 0.70968
+        },
+        {
+            "model": "CatBoost",
+            "cv_accuracy_mean": 0.84695,
+            "cv_accuracy_std": 0.01395,
+            "test_accuracy": 0.8097,
+            "test_precision": 0.80952,
+            "test_recall": 0.66019,
+            "test_f1": 0.72727
+        },
+        {
+            "model": "Random Forest",
+            "cv_accuracy_mean": 0.84172,
+            "cv_accuracy_std": 0.01479,
+            "test_accuracy": 0.82463,
+            "test_precision": 0.84146,
+            "test_recall": 0.6699,
+            "test_f1": 0.74595
+        },
+        {
+            "model": "RBF SVM",
+            "cv_accuracy_mean": 0.84034,
+            "cv_accuracy_std": 0.01434,
+            "test_accuracy": 0.80224,
+            "test_precision": 0.77778,
+            "test_recall": 0.67961,
+            "test_f1": 0.72539
+        },
+        {
+            "model": "Logistic Regression",
+            "cv_accuracy_mean": 0.83766,
+            "cv_accuracy_std": 0.01648,
+            "test_accuracy": 0.79478,
+            "test_precision": 0.73529,
+            "test_recall": 0.72816,
+            "test_f1": 0.73171
+        },
+        {
+            "model": "KNN",
+            "cv_accuracy_mean": 0.83573,
+            "cv_accuracy_std": 0.00748,
+            "test_accuracy": 0.78358,
+            "test_precision": 0.77778,
+            "test_recall": 0.61165,
+            "test_f1": 0.68478
+        },
+        {
+            "model": "PyTorch NN",
+            "cv_accuracy_mean": 0.83568,
+            "cv_accuracy_std": 0.02035,
+            "test_accuracy": 0.77985,
+            "test_precision": 0.72449,
+            "test_recall": 0.68932,
+            "test_f1": 0.70647
+        },
+        {
+            "model": "Decision Tree",
+            "cv_accuracy_mean": 0.82253,
+            "cv_accuracy_std": 0.0275,
+            "test_accuracy": 0.77612,
+            "test_precision": 0.72632,
+            "test_recall": 0.6699,
+            "test_f1": 0.69697
+        },
+        {
+            "model": "Gaussian Naive Bayes",
+            "cv_accuracy_mean": 0.79274,
+            "cv_accuracy_std": 0.0196,
+            "test_accuracy": 0.76866,
+            "test_precision": 0.68468,
+            "test_recall": 0.73786,
+            "test_f1": 0.71028
+        }
+    ],
+    "ensemble": {
+        "type": "voting",
+        "models": [
+            "CatBoost",
+            "Logistic Regression",
+            "KNN"
+        ],
+        "result": {
+            "model": "Ensemble (voting)",
+            "cv_accuracy_mean": 0.8555225806451613,
+            "cv_accuracy_std": 0.009049531869392509,
+            "test_accuracy": 0.8097014925373134,
+            "test_precision": 0.7888888888888889,
+            "test_recall": 0.6893203883495146,
+            "test_f1": 0.7357512953367875
+        }
+    }
+}

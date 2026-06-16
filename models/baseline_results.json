@@ -1,0 +1,31 @@
+{
+    "general_params": {
+        "seed": 42,
+        "cv_folds": 5,
+        "features": [
+            "Pclass",
+            "Sex",
+            "Age",
+            "SibSp",
+            "Parch",
+            "Fare",
+            "Embarked"
+        ]
+    },
+    "model_params": {
+        "model": "LogisticRegression",
+        "max_iter": 1000,
+        "random_state": 42
+    },
+    "result": {
+        "model": "Baseline Logistic Regression",
+        "display_model": "Baseline Logistic Regression (non-equal CV, 5-fold full train)",
+        "cv_accuracy_mean": 0.7923921913250894,
+        "cv_accuracy_std": 0.01744462427171013,
+        "test_accuracy": null,
+        "test_precision": null,
+        "test_recall": null,
+        "test_f1": null
+    },
+    "submission_file": "subs/baseline_submission.csv"
+}
